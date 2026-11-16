@@ -163,17 +163,14 @@ def detect_layout():
     return "us"
 
 
-PAD, GAP = 12, 8   # side padding of the window and gap between keys, in pixels
+GAP = 8                    # gap between keys, in pixels
+KEY_UNIT_SHARE = 0.66 / 22  # a key of weight 1 is this share of the screen width: the key size
+                            # the owner found right (the panel is wider, the keys are not)
 
 
-def fit_widths(weights, room):
-    """Pixel widths for keys of the given relative weights so that, with GAP pixels between
-    them, the row fills exactly `room` pixels (rows of different length all reach both edges)."""
-    room -= GAP * (len(weights) - 1)
-    total = sum(weights)
-    px = [int(room * w / total) for w in weights]
-    px[-1] += room - sum(px)          # the rounding remainder goes to the last key
-    return px
+def key_unit(screen_width):
+    """Pixels of one unit of key width (a normal key is 2 units, the space bar 8)."""
+    return max(34, int(screen_width * KEY_UNIT_SHARE))
 
 
 def all_layout_chars():
@@ -263,12 +260,13 @@ def main():
     display = Gdk.Display.get_default()
     monitor = display.get_primary_monitor() or display.get_monitor(0)
     geo = monitor.get_geometry()
-    room = geo.width - 2 * PAD        # every row is stretched to this width: the keyboard is as wide as the screen
+    unit = key_unit(geo.width)        # key size as in the first version
 
     outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
-    outer.set_margin_start(PAD)
-    outer.set_margin_end(PAD)
-    outer.set_margin_top(10)
+    outer.set_halign(Gtk.Align.CENTER)   # the keys stay centred on a panel as wide as the screen
+    outer.set_margin_start(16)
+    outer.set_margin_end(16)
+    outer.set_margin_top(12)
     outer.set_margin_bottom(0)        # flush with the bottom edge of the screen
     title = Gtk.Label(label=f"OK types  ·  arrows move  ·  Back closes  ·  layout: {layout}")
     title.get_style_context().add_class("title")
@@ -284,13 +282,12 @@ def main():
         buttons.clear()
         for row in model.rows:
             box = Gtk.Box(spacing=GAP)
-            box.set_halign(Gtk.Align.FILL)
+            box.set_halign(Gtk.Align.CENTER)
             line = []
-            widths = fit_widths([k[3] for k in row], room)
-            for (label, kind, _value, _w), px in zip(row, widths):
+            for label, kind, _value, width in row:
                 b = Gtk.Button(label=label)
                 b.set_can_focus(False)
-                b.set_size_request(px, -1)
+                b.set_size_request(unit * width, -1)
                 if kind != "char":
                     b.get_style_context().add_class("mod")
                 box.pack_start(b, False, False, 0)
@@ -340,6 +337,7 @@ def main():
             pixbuf = Gdk.pixbuf_get_from_window(gdk_win, 0, 0, gdk_win.get_width(), gdk_win.get_height())
             print(f"[osk-snapshot] visible={gdk_win.is_visible()} viewable={gdk_win.is_viewable()} "
                   f"pos={win.get_position()} size={gdk_win.get_width()}x{gdk_win.get_height()} "
+                  f"keys_block={outer.get_allocated_width()}px unit={unit} "
                   f"monitor={geo.width}x{geo.height}+{geo.x}+{geo.y} pixbuf={'ok' if pixbuf else 'None'}",
                   file=sys.stderr, flush=True)
             if pixbuf is not None:

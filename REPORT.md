@@ -224,9 +224,10 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 
 ## T25 — On-screen keyboard: full width, no border below
 **Request (after trying it on the TV, photo):** the keyboard should have no border below and extend to the width of the TV. The photo also shows that it works: it appears over ES-DE and ES-DE keeps the focus.
-**Done:** the window is as wide as the monitor and flush with its bottom edge (no bottom margin); every row is stretched to both edges by `fit_widths()` (key widths stay proportional, the rounding remainder goes to the last key).
-**DONE (tests):** 63 offline tests pass, including that every row of every layer fills the width exactly for 800, 1712, 1920 and 3840 px, and that a space bar stays four times a letter key.
-**DONE (on the machine):** window 1712x402 at (0, 561) on a 1712x963 screen, so its bottom is at 963, the screen's bottom edge; the focused window is the same before, during and after (ES-DE). Also seen: the window class of ES-DE is `es-de`, which matches the Back exception of T19.
+**Done:** the panel is as wide as the monitor and flush with its bottom edge (no bottom margin); the keys stay centred. A first attempt stretched every row (and so every key) to the screen width; the owner said the key size had been right, so the keys went back to their original size (`key_unit()`: 0.66/22 of the screen width per unit, a letter key is 2 units) and only the panel is wide.
+**DONE (tests):** 63 offline tests pass, including that a letter key is 102 px on a 1712 px screen (the size the owner approved), that the unit has a readable minimum, and that the widest row fits on 1280, 1712, 1920 and 3840 px screens.
+**DONE (on the machine):** panel 1712x404 at (0, 559) on a 1712x963 screen, so its bottom is at 963, the screen's bottom edge; keys block 1253 px plus margins = the 1285 px of the first version (`unit=51`); the focused window is the same before, during and after (ES-DE, then Steam Big Picture). Also seen: the window class of ES-DE is `es-de`, which matches the Back exception of T19.
+**Provenance question from the owner:** the keyboard (model, tables, GTK window, receiver link) was written from scratch in this project; no third-party keyboard code was copied or adapted and nothing was downloaded for it; it depends on GTK 3 (PyGObject) and `python-evdev` as libraries. The Italian punctuation table comes from the author's knowledge of the xkb `it` layout and is unverified.
 **Not changed:** a TV with overscan can still hide the last pixels at the edges; that is a TV setting.
 **Outcome:** OK, pending the owner's look on the TV.
 

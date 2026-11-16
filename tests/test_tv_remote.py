@@ -477,18 +477,17 @@ class OskModelTests(unittest.TestCase):
         self.assertEqual([c for _, c, v in (ev for ev in t.ui.events if ev != "syn") if v == 1],
                          [e.KEY_LEFTSHIFT, e.KEY_7])
 
-    def test_every_row_fills_the_screen_width_exactly(self):
-        for width in (1712, 1920, 3840, 800):
-            room = width - 2 * osk.PAD
-            for layer, rows in osk.LAYERS.items():
-                for row in rows:
-                    px = osk.fit_widths([k[3] for k in row], room)
-                    self.assertEqual(sum(px) + osk.GAP * (len(row) - 1), room, (width, layer))
-                    self.assertTrue(all(p > 0 for p in px))
+    def test_key_size_is_the_one_the_owner_approved(self):
+        # on the owner's 1712 px wide screen a letter key is 2 units = 102 px (the first version)
+        self.assertEqual(osk.key_unit(1712), 51)
+        self.assertEqual(osk.key_unit(1712) * 2, 102)
+        self.assertEqual(osk.key_unit(300), 34)        # never smaller than a readable minimum
 
-    def test_key_widths_stay_proportional(self):
-        px = osk.fit_widths([2, 2, 8], 1000)          # a "space bar" is four times a letter key
-        self.assertAlmostEqual(px[2] / px[0], 4, delta=0.2)
+    def test_the_widest_row_fits_on_normal_screens(self):
+        for width in (1280, 1712, 1920, 3840):
+            widest = max(sum(k[3] for k in row) * osk.key_unit(width) + osk.GAP * (len(row) - 1)
+                         for rows in osk.LAYERS.values() for row in rows)
+            self.assertLess(widest, width, width)
 
     def test_layout_can_be_forced(self):
         import os

@@ -310,6 +310,233 @@ class RouterPointer(unittest.TestCase):
         self.assertEqual(router.pointer.calls, 2)
 
 
+class FakeFocus:
+    def __init__(self, **fields):
+        self.f = {"pid": 1, "class": "", "app_id": "", "title": "", "comm": ""}
+        self.f.update(fields)
+
+    def current(self):
+        return self.f
+
+
+BACK = {"KEY_BACK": {"tap": "KEY_ESC", "apps": {"es-de": {"tap": "KEY_BACKSPACE"},
+                                                "Kodi": {"tap": "KEY_BACKSPACE"}}}}
+
+
+class AppRules(unittest.TestCase):
+    def router(self, focus):
+        router, out, _ = make_router(BACK)
+        router.focus = focus
+        return router, out
+
+    def press(self, router, focus=None, new_focus=None):
+        router.on_event("KEY_BACK", "DOWN", True)
+        if new_focus is not None:
+            router.focus = new_focus
+        router.on_event("KEY_BACK", "UP", True)
+
+    def test_default_action_for_other_apps(self):
+        router, out = self.router(FakeFocus(**{"class": "gnome-shell"}))
+        self.press(router)
+        self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)])
+
+    def test_exception_matches_process_name_class_and_title_case_insensitively(self):
+        for fields in ({"comm": "es-de"}, {"class": "ES-DE"}, {"title": "My Kodi window"},
+                       {"app_id": "org.xbmc.KODI"}):
+            router, out = self.router(FakeFocus(**fields))
+            self.press(router)
+            self.assertEqual(out.events, [("KEY_BACKSPACE", 1), ("KEY_BACKSPACE", 0)], fields)
+
+    def test_no_focus_information_uses_the_default(self):
+        router, out = self.router(type("NoFocus", (), {"current": lambda self: None})())
+        self.press(router)
+        self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)])
+
+    def test_release_uses_the_entry_chosen_at_press(self):
+        router, out = self.router(FakeFocus(comm="es-de"))
+        self.press(router, new_focus=FakeFocus(**{"class": "gnome-shell"}))  # focus moves mid-press
+        self.assertEqual(out.events, [("KEY_BACKSPACE", 1), ("KEY_BACKSPACE", 0)])
+
+    def test_log_shows_the_app_and_the_rule(self):
+        router, _ = self.router(FakeFocus(comm="es-de"))
+        lines = seen_lines(router, ("KEY_BACK", "DOWN", True))
+        self.assertIn("decision=tap:KEY_BACKSPACE@es-de", lines[0])
+        self.assertIn("app=es-de", lines[0])
+
+    def test_invalid_rules_are_rejected(self):
+        for apps in ({"x": {"tap": "KEY_POWER"}}, {"": {"tap": "KEY_A"}}, {"x": {}},
+                     {f"r{i}": {"tap": "KEY_A"} for i in range(11)}, ["not", "a", "dict"],
+                     {"a\nb": {"tap": "KEY_A"}}):
+            entries, errors = core.normalise({"KEY_BACK": {"tap": "KEY_ESC", "apps": apps}})
+            self.assertTrue(errors and "KEY_BACK" not in entries, apps)
+
+    def test_saving_keeps_the_app_rules(self):
+        import tv_remote_web as web
+        entries, errors = core.normalise(BACK)
+        self.assertEqual(errors, [])
+        saved = web.to_file_format(entries)
+        self.assertEqual(saved["KEY_BACK"]["tap"], "KEY_ESC")
+        self.assertEqual(saved["KEY_BACK"]["apps"], {"es-de": {"tap": "KEY_BACKSPACE"},
+                                                     "Kodi": {"tap": "KEY_BACKSPACE"}})
+        again, errors = core.normalise(saved)          # and it reads back the same
+        self.assertEqual(errors, [])
+        self.assertEqual([p for p, _ in again["KEY_BACK"]["apps"]], ["es-de", "Kodi"])
+
+
+import tv_osk as osk  # noqa: E402
+
+
+class OskModelTests(unittest.TestCase):
+    def test_starts_on_q_and_wraps_horizontally(self):
+        m = osk.OskModel()
+        self.assertEqual(m.key[2], "q")
+        m.move("left")
+        self.assertEqual(m.key[2], "p")
+        m.move("right")
+        self.assertEqual(m.key[2], "q")
+
+    def test_vertical_moves_follow_the_horizontal_position_and_wrap(self):
+        m = osk.OskModel()
+        m.move("down")
+        self.assertEqual(m.key[2], "a")
+        m.move("up")
+        self.assertEqual(m.key[2], "q")
+        for _ in range(len(m.rows)):          # a full turn comes back to the same row
+            m.move("down")
+        self.assertEqual((m.row, m.key[2]), (1, "q"))
+        m.col = 9                              # 'p' is at the far right: below it must be a right-hand key
+        m.move("down")
+        self.assertGreaterEqual(osk.centre(m.rows[m.row], m.col), 0.85)
+
+    def test_char_press_and_one_shot_shift(self):
+        m = osk.OskModel()
+        self.assertEqual(m.press(), {"type": "char", "char": "q"})
+        m.row, m.col = 3, 0                    # shift key
+        self.assertIsNone(m.press())
+        self.assertEqual(m.layer, "upper")
+        m.row, m.col = 1, 0
+        self.assertEqual(m.press(), {"type": "char", "char": "Q"})
+        self.assertEqual(m.layer, "lower")     # back to lower case after one capital letter
+
+    def test_symbols_layer_and_special_keys(self):
+        m = osk.OskModel()
+        m.row, m.col = 4, 0                    # ?123
+        self.assertIsNone(m.press())
+        self.assertEqual(m.layer, "symbols")
+        self.assertEqual(m.key[1], "layer")
+        m.press()                              # ABC
+        self.assertEqual(m.layer, "lower")
+        for col, kind in ((2, "space"), (1, "left"), (3, "right"), (4, "close")):
+            m.row, m.col = 4, col
+            self.assertEqual(m.press(), {"type": kind})
+        m.row, m.col = 0, 10
+        self.assertEqual(m.press(), {"type": "backspace"})
+        m.row, m.col = 2, 9
+        self.assertEqual(m.press(), {"type": "enter"})
+
+    def test_every_layer_has_the_same_number_of_rows(self):
+        self.assertEqual({len(rows) for rows in osk.LAYERS.values()}, {5})
+
+    def test_every_character_can_be_typed_in_both_layouts(self):
+        for layout, table in osk.TABLES.items():
+            missing = sorted(c for c in osk.all_layout_chars() if c not in table)
+            self.assertEqual(missing, [], layout)
+
+    @unittest.skipIf(core.e is None, "python-evdev not installed")
+    def test_typing_tables_only_use_real_key_names(self):
+        names = set(osk.SPECIAL.values())
+        for table in osk.TABLES.values():
+            for key, mods in table.values():
+                names.update((key, *mods))
+        self.assertEqual([n for n in names if not hasattr(core.e, n)], [])
+
+    @unittest.skipIf(core.e is None, "python-evdev not installed")
+    def test_typist_presses_modifiers_around_the_key(self):
+        t = osk.Typist("it")
+        t.e, t.ui = core.e, FakePointerUI()
+        t.do({"type": "char", "char": "A"})
+        seq = [(c, v) for _, c, v in (ev for ev in t.ui.events if ev != "syn")]
+        e = core.e
+        self.assertEqual(seq, [(e.KEY_LEFTSHIFT, 1), (e.KEY_A, 1), (e.KEY_A, 0), (e.KEY_LEFTSHIFT, 0)])
+        t.ui.events.clear()
+        t.do({"type": "char", "char": "/"})     # Italian layout: Shift+7
+        self.assertEqual([c for _, c, v in (ev for ev in t.ui.events if ev != "syn") if v == 1],
+                         [e.KEY_LEFTSHIFT, e.KEY_7])
+
+    def test_layout_can_be_forced(self):
+        import os
+        os.environ["CEC_OSK_LAYOUT"] = "us"
+        try:
+            self.assertEqual(osk.detect_layout(), "us")
+        finally:
+            del os.environ["CEC_OSK_LAYOUT"]
+
+
+class FakeProc:
+    def __init__(self):
+        self.alive = True
+
+    def poll(self):
+        return None if self.alive else 0
+
+
+class OskControllerTests(unittest.TestCase):
+    def make(self):
+        sent, procs = [], []
+
+        def starter():
+            procs.append(FakeProc())
+            return procs[-1]
+
+        return core.OskController(starter=starter, sender=sent.append), sent, procs
+
+    def test_route_only_while_open_and_only_for_the_dpad(self):
+        c, sent, procs = self.make()
+        self.assertIsNone(c.route("KEY_UP"))                 # closed: nothing is routed
+        self.assertEqual(c.toggle(), "opening")
+        self.assertEqual(c.route("KEY_UP"), "osk:up")
+        self.assertEqual(c.route("KEY_SELECT"), "osk:ok")
+        self.assertEqual(c.route("KEY_BACK"), "osk:back")
+        self.assertIsNone(c.route("KEY_PLAYPAUSE"))          # other buttons keep their normal mapping
+        self.assertEqual(sent, ["up", "ok", "back"])
+        self.assertEqual(c.toggle(), "closing")
+        self.assertEqual(sent[-1], "close")
+
+    def test_it_stops_routing_when_the_keyboard_process_ends(self):
+        c, sent, procs = self.make()
+        c.toggle()
+        procs[0].alive = False                               # closed itself (Back)
+        self.assertFalse(c.active)
+        self.assertIsNone(c.route("KEY_UP"))
+        self.assertEqual(c.toggle(), "opening")              # and can be opened again
+        self.assertEqual(len(procs), 2)
+
+    def test_router_toggles_and_routes_without_injecting_the_dpad(self):
+        router, out, _ = make_router({"KEY_FIND": {"tap": "osk:toggle"}, "KEY_UP": {"tap": "KEY_UP"}})
+        c, sent, procs = self.make()
+        router.osk = c
+        lines = seen_lines(router, ("KEY_FIND", "DOWN", True), ("KEY_FIND", "UP", True),
+                           ("KEY_UP", "DOWN", True), ("KEY_UP", "UP", True))
+        self.assertEqual(len(procs), 1)                      # opened once
+        self.assertIn("decision=tap:osk:toggle", lines[0])
+        self.assertIn("decision=osk:up", lines[2])
+        self.assertEqual(sent, ["up"])
+        self.assertEqual(out.events, [])                     # the arrow was NOT injected into the app
+
+    def test_dry_run_never_starts_the_keyboard(self):
+        router, out, _ = make_router({"KEY_FIND": {"tap": "osk:toggle"}})
+        out.is_dry = lambda: True
+        c, sent, procs = self.make()
+        router.osk = c
+        seen_lines(router, ("KEY_FIND", "DOWN", True))
+        self.assertEqual(procs, [])
+
+    def test_osk_action_is_valid_and_round_trips(self):
+        self.assertEqual(core.parse_action("osk:toggle"), {"type": "osk"})
+        self.assertEqual(core.action_to_text({"type": "osk"}), "osk:toggle")
+        self.assertIsNone(core.parse_action("osk:evil"))
+
+
 class Actions(unittest.TestCase):
     def test_parse_action_kinds(self):
         self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})

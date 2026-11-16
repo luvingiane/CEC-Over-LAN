@@ -184,15 +184,22 @@ def key_names():
                                "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_HOMEPAGE"})
 
 
+def entry_to_file(spec):
+    item = {}
+    if spec["tap"]:
+        item["tap"] = core.action_to_text(spec["tap"])
+    if spec["long"]:
+        item["long"] = core.action_to_text(spec["long"])
+        item["hold"] = spec["hold"]
+    return item
+
+
 def to_file_format(entries):
     out = {}
     for key, spec in entries.items():
-        item = {}
-        if spec["tap"]:
-            item["tap"] = core.action_to_text(spec["tap"])
-        if spec["long"]:
-            item["long"] = core.action_to_text(spec["long"])
-            item["hold"] = spec["hold"]
+        item = entry_to_file(spec)
+        if spec.get("apps"):
+            item["apps"] = {pattern: entry_to_file(sub) for pattern, sub in spec["apps"]}
         out[key] = item
     return out
 
@@ -273,7 +280,8 @@ def monitor(q):
             "ts": float(m.group(1)), "key": m.group(2), "state": m.group(3),
             "screen": None if "screen" not in f else f["screen"] == "yes",
             "decision": f.get("decision"), "dry": None if "dry" not in f else f["dry"] == "yes",
-            "held": float(f["held"]) if "held" in f else None, "result": f.get("result")})
+            "held": float(f["held"]) if "held" in f else None, "result": f.get("result"),
+            "app": f.get("app")})
     return {"ok": True, "now": time.time(), "dry_run": core.DRYRUN_FILE.exists(),
             "events": found[-200:]}
 
@@ -329,10 +337,11 @@ def do_keymap(data):
         return {"ok": False, "message": "invalid mapping"}
     entries, errors = core.normalise(raw)
     for key, spec in entries.items():
-        for slot in ("tap", "long"):
-            act = spec[slot]
-            if act and act["type"] == "app" and core.desktop_path(act["id"]) is None:
-                errors.append(f"{key}: application {act['id']} is not installed")
+        for sub in [spec] + [s for _, s in spec.get("apps", [])]:
+            for slot in ("tap", "long"):
+                act = sub[slot]
+                if act and act["type"] == "app" and core.desktop_path(act["id"]) is None:
+                    errors.append(f"{key}: application {act['id']} is not installed")
     if errors:
         return {"ok": False, "message": "; ".join(errors[:5])}
     STATE_DIR.mkdir(parents=True, exist_ok=True)

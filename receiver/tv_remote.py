@@ -29,10 +29,12 @@ keymap.json format:
   "long" fires once after "hold" seconds (default 3). No free-form commands are accepted.
 """
 import argparse
+import ast
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -89,6 +91,8 @@ def parse_action(text):
     if not isinstance(text, str):
         return None
     text = text.strip()
+    if text == "osk:toggle":
+        return {"type": "osk"}
     if text.startswith("app:"):
         app = text[4:].strip()
         return {"type": "app", "id": app} if DESKTOP_ID.match(app) else None
@@ -100,6 +104,8 @@ def parse_action(text):
 
 
 def action_to_text(action):
+    if action["type"] == "osk":
+        return "osk:toggle"
     if action["type"] == "keys":
         return "+".join(action["keys"])
     if action["type"] == "app":
@@ -197,8 +203,37 @@ def default_keymap(back_key="KEY_BACKSPACE"):
     }
 
 
+APP_PATTERN = re.compile(r"^[^\x00-\x1f\x7f]{1,60}$")
+MAX_APP_RULES = 10
+
+
+def parse_entry(spec, label):
+    """One mapping entry {tap, long, hold} -> (entry, error)."""
+    if not isinstance(spec, dict):
+        return None, f"{label}: invalid spec"
+    tap = parse_action(spec["tap"]) if spec.get("tap") else None
+    long_ = parse_action(spec["long"]) if spec.get("long") else None
+    if spec.get("tap") and tap is None:
+        return None, f"{label}: invalid tap action"
+    if spec.get("long") and long_ is None:
+        return None, f"{label}: invalid long action"
+    try:
+        hold = float(spec.get("hold", DEFAULT_HOLD))
+    except (TypeError, ValueError):
+        return None, f"{label}: invalid hold time"
+    if not 0.3 <= hold <= 10:
+        return None, f"{label}: hold must be between 0.3 and 10 seconds"
+    if not (tap or long_):
+        return None, f"{label}: no action"
+    return {"tap": tap, "long": long_, "hold": hold}, None
+
+
 def normalise(raw):
-    """Validate a raw {remote_key: spec} dict; returns (entries, errors)."""
+    """Validate a raw {remote_key: spec} dict; returns (entries, errors).
+
+    A spec may also carry "apps": {"<text>": {tap/long/hold}}: exceptions that replace the
+    action while the focused window matches <text> (class, app id, title or process name,
+    case-insensitive substring); the first matching exception wins."""
     entries, errors = {}, []
     if not isinstance(raw, dict):
         return entries, ["keys must be an object"]
@@ -206,26 +241,25 @@ def normalise(raw):
         if not (isinstance(key, str) and KEY_NAME.match(key)) or not isinstance(spec, dict):
             errors.append(f"{key}: invalid remote key or spec")
             continue
-        tap = parse_action(spec["tap"]) if spec.get("tap") else None
-        long_ = parse_action(spec["long"]) if spec.get("long") else None
-        if spec.get("tap") and tap is None:
-            errors.append(f"{key}: invalid tap action")
+        entry, err = parse_entry(spec, key)
+        if err:
+            errors.append(err)
             continue
-        if spec.get("long") and long_ is None:
-            errors.append(f"{key}: invalid long action")
+        entry["apps"] = []
+        raw_apps = spec.get("apps") or {}
+        if not isinstance(raw_apps, dict) or len(raw_apps) > MAX_APP_RULES:
+            errors.append(f"{key}: apps must be an object with at most {MAX_APP_RULES} rules")
             continue
-        try:
-            hold = float(spec.get("hold", DEFAULT_HOLD))
-        except (TypeError, ValueError):
-            errors.append(f"{key}: invalid hold time")
-            continue
-        if not 0.3 <= hold <= 10:
-            errors.append(f"{key}: hold must be between 0.3 and 10 seconds")
-            continue
-        if not (tap or long_):
-            errors.append(f"{key}: no action")
-            continue
-        entries[key] = {"tap": tap, "long": long_, "hold": hold}
+        bad = False
+        for pattern, sub in raw_apps.items():
+            sub_entry, sub_err = parse_entry(sub, f"{key} [{pattern}]")
+            if not (isinstance(pattern, str) and APP_PATTERN.match(pattern.strip())) or sub_err:
+                errors.append(sub_err or f"{key}: invalid app text {pattern!r}")
+                bad = True
+                break
+            entry["apps"].append((pattern.strip(), sub_entry))
+        if not bad:
+            entries[key] = entry
     return entries, errors
 
 
@@ -383,13 +417,115 @@ class Pointer:
         return "moved"
 
 
+OSK_SCRIPT = Path(__file__).resolve().with_name("tv_osk.py")
+OSK_SOCKET = "\0cec-over-lan-osk-%d" % os.getuid()  # abstract socket, same name as in tv_osk.py
+OSK_NAV = {"KEY_UP": "up", "KEY_DOWN": "down", "KEY_LEFT": "left", "KEY_RIGHT": "right",
+           "KEY_SELECT": "ok", "KEY_BACK": "back"}
+
+
+class OskController:
+    """Starts and stops the on-screen keyboard (tv_osk.py) and, while it is open, sends it the
+    remote's D-pad instead of the normal mapping. Its process lives in its own systemd scope."""
+
+    def __init__(self, starter=None, sender=None):
+        self.proc = None
+        self.starter = starter or self._start
+        self.sender = sender or self._send
+
+    @property
+    def active(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def toggle(self):
+        if self.active:
+            self.sender("close")
+            return "closing"
+        self.proc = self.starter()
+        return "opening"
+
+    def route(self, key):
+        """While the keyboard is open the D-pad drives it. Returns the decision, or None."""
+        cmd = OSK_NAV.get(key)
+        if cmd is None or not self.active:
+            return None
+        self.sender(cmd)
+        return "osk:" + cmd
+
+    @staticmethod
+    def _start():
+        env = dict(session_env())
+        env["GDK_BACKEND"] = "x11"  # an X11 window: Xwayland honours "never take the focus"
+        return subprocess.Popen(scope_cmd([sys.executable, "-B", str(OSK_SCRIPT)]), env=env,
+                                start_new_session=True, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    @staticmethod
+    def _send(msg):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        try:
+            s.sendto(msg.encode("ascii"), OSK_SOCKET)
+        except OSError:
+            pass
+        finally:
+            s.close()
+
+
+class Focus:
+    """Which window has the keyboard focus, asked to the GNOME Shell extension "focuspid"
+    (D-Bus org.claude.FocusPid, already installed on the machine). Cached for 0.25 s.
+    current() is None when the extension is not there or does not answer."""
+
+    def __init__(self):
+        self._val, self._at = None, -99.0
+
+    def current(self):
+        now = time.monotonic()
+        if now - self._at >= 0.25:
+            self._at = now
+            self._val = self._query()
+        return self._val
+
+    @staticmethod
+    def _query():
+        try:
+            r = subprocess.run(
+                ["gdbus", "call", "--session", "--dest", "org.claude.FocusPid",
+                 "--object-path", "/org/claude/FocusPid", "--method", "org.claude.FocusPid.Get"],
+                capture_output=True, text=True, timeout=0.6, env=session_env())
+            pid, cls, app_id, title = ast.literal_eval(r.stdout.strip())
+        except (subprocess.TimeoutExpired, OSError, ValueError, SyntaxError):
+            return None
+        comm = ""
+        if pid:
+            try:
+                comm = Path(f"/proc/{pid}/comm").read_text().strip()
+            except OSError:
+                pass
+        return {"pid": pid, "class": cls, "app_id": app_id, "title": title, "comm": comm}
+
+
+def focus_text(f):
+    """Everything an app exception can match on, lower case."""
+    return " ".join([f["class"], f["app_id"], f["title"], f["comm"]]).lower()
+
+
+def focus_label(f):
+    """Short, space-free name of the focused app for the log."""
+    if not f:
+        return "unknown"
+    return re.sub(r"\s+", "_", f["class"] or f["app_id"] or f["comm"] or "none")[:30]
+
+
 class Router:
     """Turns remote key events into injected keys / launches following the keymap."""
 
-    def __init__(self, keymap, out, launcher=None, pointer=None):
+    def __init__(self, keymap, out, launcher=None, pointer=None, focus=None, osk=None):
         self.keymap = keymap
         self.out = out
         self.pointer = pointer
+        self.focus = focus
+        self.osk = osk
+        self.active_entry = {}  # remote key -> the entry chosen at DOWN (used again at UP)
         self.launcher = launcher or (lambda action: launch(action, out.is_dry()))
         self.lock = threading.RLock()
         self.holds = {}   # remote key -> injected names currently held down
@@ -408,6 +544,18 @@ class Router:
         """One-shot execution of an action (click for keys, launch for app/url)."""
         if action["type"] == "keys":
             self._click(action["keys"])
+            return
+        if action["type"] == "osk":
+            if self.osk is None:
+                return
+            if getattr(self.out, "is_dry", lambda: False)():
+                print("[osk] would open or close the on-screen keyboard", flush=True)
+                return
+            now = time.monotonic()
+            if now - self.last_launch.get("osk", -99) < 0.8:
+                return
+            self.last_launch["osk"] = now
+            print(f"[osk] {self.osk.toggle()}", flush=True)
             return
         text = action_to_text(action)
         now = time.monotonic()
@@ -436,15 +584,24 @@ class Router:
                 decision = self._down(key) if active else "off-screen"
                 dry = "yes" if getattr(self.out, "is_dry", lambda: False)() else "no"
                 detail = f"decision={decision} dry={dry}"
+                if active and self.focus is not None:
+                    detail += f" app={focus_label(self.focus.current())}"
                 if active and self.pointer is not None:
                     detail += f" pointer={self.pointer.hide()}"
             print(f"[seen] {key} {state} screen={'yes' if active else 'no'} {detail}", flush=True)
 
     def _down(self, key):
         """Start handling a press; returns a short description of the decision."""
+        if self.osk is not None:
+            routed = self.osk.route(key)  # keyboard open: the D-pad drives it
+            if routed:
+                return routed
         entry = self.keymap.get(key)
         if not entry:
             return "unmapped"
+        entry, rule = self._resolve(entry)
+        self.active_entry[key] = entry
+        suffix = "@" + re.sub(r"\s+", "_", rule) if rule else ""
         if entry["long"]:
             t = threading.Timer(entry["hold"], self._fire_long, args=(key, entry["long"]))
             self.timers[key] = t
@@ -452,7 +609,7 @@ class Router:
             text = f"wait-long-{entry['hold']:g}s:{brief(entry['long'])}"
             if entry["tap"]:
                 text += f"+tap-on-release:{brief(entry['tap'])}"
-            return text
+            return text + suffix
         if entry["tap"]:
             if entry["tap"]["type"] == "keys":
                 for n in entry["tap"]["keys"]:
@@ -460,8 +617,21 @@ class Router:
                 self.holds[key] = entry["tap"]["keys"]
             else:
                 self._perform(entry["tap"])
-            return "tap:" + brief(entry["tap"])
+            return "tap:" + brief(entry["tap"]) + suffix
         return "none"
+
+    def _resolve(self, entry):
+        """Apply the app exceptions of an entry: returns (entry to use, matching text or None)."""
+        if not entry.get("apps") or self.focus is None:
+            return entry, None
+        f = self.focus.current()
+        if not f:
+            return entry, None
+        blob = focus_text(f)
+        for pattern, override in entry["apps"]:
+            if pattern.lower() in blob:
+                return override, pattern
+        return entry, None
 
     def _up(self, key):
         """Finish a press; returns what happened at release."""
@@ -470,9 +640,9 @@ class Router:
             self.fired.discard(key)
             result = "long-fired"
         t = self.timers.pop(key, None)
+        entry = self.active_entry.pop(key, None) or self.keymap.get(key)
         if t is not None:  # released before the hold time
             t.cancel()
-            entry = self.keymap.get(key)
             if entry and entry["tap"]:
                 self._perform(entry["tap"])
                 result = "tap-clicked"
@@ -547,7 +717,7 @@ def run(args):
     if not args.no_hide_pointer:
         pointer = Pointer(out, KeepPointerFlag(args.pointer_file),
                           None if args.dry_run else make_pointer_device())
-    router = Router(keymap, out, pointer=pointer)
+    router = Router(keymap, out, pointer=pointer, focus=Focus(), osk=OskController())
     gate = Gate(args, router)
     current = {"proc": None}
 

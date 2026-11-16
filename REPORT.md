@@ -22,7 +22,11 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T15 Dry-run switch | OK (pending the owner's test with the real remote) |
 | T16 Key monitor screen | OK (pending the owner's check with the real remote) |
 | T17 Hide the mouse pointer | PARTIAL (to be confirmed on the TV) |
-| T18 Launched programs in their own scope | Fixed and tested; activation waits for a restart |
+| T18 Launched programs in their own scope | Fixed, tested and active since the restart (T22) |
+| T19 Back in GNOME and ES-DE (per-app exceptions) | OK (pending the owner's check) |
+| T20 Reaching the dock | PARTIAL (single-tap `Ctrl+Alt+Tab` not verified) |
+| T21 On-screen keyboard | PARTIAL (typing not tried yet) |
+| T22 Restart without closing launched apps | OK |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -170,6 +174,33 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **DONE (on the machine, inside a transient service that mimics the receiver):** the service cgroup was `cec-scope-test*.service`, the program's `run-p…scope`; after the service ended the program was still running and its scope `active running`. A first attempt looked like the program died: it had inherited the closed service's `--pipe`; the real code redirects stdio to `/dev/null` and was re-tested that way.
 **Not yet active:** the running receiver still has the old code until it is restarted, and restarting it closes the applications launched before (they are in its cgroup). New launches after that restart are safe.
 **Outcome:** fixed in code and tested; activation waits for a restart.
+
+## T19 — Back works in GNOME and in ES-DE (per-app exceptions)
+**Problem:** GNOME wants `Esc` to go back, ES-DE wants Back = `Backspace` and uses `Esc` for its main menu; the owner had worked around it with `Backspace` on tap and `Esc` on a 2-second hold.
+**Done:** a key may carry exceptions for specific applications (`"apps": {"es-de": {...}}`), matched against the focused window's class, application id, title and process name (case-insensitive substring); the focused window comes from the existing `focuspid` GNOME Shell extension through `gdbus` (cached 0.25 s). The entry chosen at the press is the one used at the release. The web editor shows, edits and saves the exceptions (they are not lost when saving), the Key monitor shows `app: …` for each press, and the log lines carry `app=` and `@<rule>`.
+**Applied to the owner's mapping (backup kept):** `KEY_BACK` = `Esc` on tap, with an exception `es-de` -> `Backspace`; the old hold-for-`Esc` was dropped.
+**DONE (tests):** 56 offline tests pass, including: other apps get the default, the exception matches the process name / class / title / app id in any case, no focus information falls back to the default, the release uses the entry chosen at the press, the log shows the app and the rule, invalid rules are rejected, saving keeps the rules and they read back.
+**DONE (browser):** an existing exception is shown, a second one added from the page, and the saved file has both.
+**DONE (on the machine):** `focuspid` answers (`YouTube TV` was focused); the ES-DE process name is `es-de`, which is what the exception matches.
+**Not verified:** pressing Back in ES-DE and in GNOME with the real remote after the change; the window class of ES-DE (the rule relies on the process name).
+**Outcome:** OK, pending the owner's check.
+
+## T20 — The dock cannot be reached with the arrows
+**DONE (read on the machine):** dash-to-dock registers the dock in GNOME's system-controls switcher (`docking.js:1432`, `ctrlAltTabManager.addGroup`), so `Ctrl+Alt+Tab` can give it the keyboard focus (GNOME binding `switch-panels = ['<Control><Alt>Tab']`); `Super+Q` only shows the dock with numbers for 2 s (`shortcut-timeout`, no focus); `hot-keys = true` makes `Super+1…9` launch or switch to the Nth dock icon. The quick settings menu is `Super+S` (`toggle-quick-settings`).
+**Done:** the *GNOME shell and dock* list in the wizard (14 actions).
+**Not verified:** `Ctrl+Alt+Tab` injected as one quick press (the switcher is normally used while holding the modifiers); the fallback is `Super+1…9`.
+**Outcome:** PARTIAL: shortcuts identified and offered; the single-tap focus needs a check.
+
+## T21 — On-screen keyboard for the remote
+**Done:** `receiver/tv_osk.py` (GTK 3 window + a model without GTK), action `osk:toggle`, `OskController` in the receiver: it starts the keyboard in its own systemd scope and, while it is open, routes up/down/left/right/OK/Back to it over an abstract UNIX socket instead of injecting them. Types through its own uinput device. Italian and US tables.
+**DONE (tests):** 56 offline tests pass: model (wrap-around, vertical moves follow the horizontal position, one-shot capital, symbol layer, special keys), every character has an entry in both layouts and every key name is a real evdev name, the typist presses modifiers around the key (`A` = Shift+A, `/` = Shift+7 on `it`), the controller routes only while the process is alive and only the D-pad, the router does not inject the arrow while the keyboard is open, never starts it in dry run.
+**DONE (on the machine):** the window is visible at the requested place (bottom centre, 1285x424 on a 1712x963 screen); the focused window is the same before, during and after (`YouTube TV`); the layout `it` is detected from GNOME; it closes on `close`; the highlighted key follows the arrows. Two visual bugs found and fixed: dimmed text because the window never has the focus (GTK `:backdrop` state), and the user's own GTK theme overriding the highlight (the styles now have a priority above the user's theme).
+**Not verified:** typing real text (needs a text field and the owner), every Italian punctuation key, behaviour with several monitors, holding an arrow to repeat.
+**Outcome:** PARTIAL until it has been tried by typing.
+
+## T22 — Restarting the receiver closed the launched applications (follow-up of T18)
+The T18 fix only applies to applications launched after the receiver restarts with the new code; ES-DE and YouTube TV started by the old code were still in the receiver's cgroup. The receiver was restarted with `KillMode=process` for that single restart (a temporary drop-in, removed afterwards; `KillMode` is `control-group` again) so that they stayed open; systemd logs a "left-over process" warning for them.
+**DONE:** both applications still running after the restart, the service active with the new code.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

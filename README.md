@@ -65,6 +65,29 @@ Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers
 
 The *Dry run* card has a switch: while it is on (a file `~/cec-over-lan/dry-run` exists; the receiver checks it twice a second, no restart), pressing a remote button presses **nothing** and launches **nothing** on the machine. The receiver only logs what it would do, and the card lists it ("would press KEY_ENTER", "would launch app kodi.desktop"); real launches are listed as "LAUNCHED". A key that is already held down when you switch it on is still released, so nothing can stay stuck. `--dry-run` on the command line is the permanent version.
 
+### Per-app exceptions
+
+Every key can have exceptions that apply only while a given application has the keyboard focus, e.g. *Back* sends `Esc` (what GNOME wants) but `Backspace` in ES-DE, where `Esc` opens the main menu:
+
+```json
+"KEY_BACK": {"tap": "KEY_ESC", "apps": {"es-de": {"tap": "KEY_BACKSPACE"}}}
+```
+
+The text is matched, case-insensitively and as a substring, against the window class, the application id, the window title and the process name; the first matching exception replaces the whole action of that key. The focused window comes from the GNOME Shell extension `focuspid` (D-Bus `org.claude.FocusPid`, shipped on the test machine, not in this repository): without it, exceptions simply never match. The *Key monitor* shows the app name seen at each press, which is the easiest way to find the text to use. The action chosen at the press is the one used at the release, even if the focus changes in between.
+
+### On-screen keyboard
+
+`osk:toggle` (action type *Keyboard* in the editor, "On-screen keyboard" in the *Desktop and media* wizard list) opens a keyboard on the screen, driven by the remote: **arrows move the highlight, OK types the key, Back closes it**, the same button closes it too. While it is open the remote's D-pad goes to the keyboard instead of being injected into the application.
+
+- The window is an Xwayland dock-type window that never takes the keyboard focus, so the text goes to the application that was in front (checked on the test machine: the focused window is the same before, while and after). It sits at the bottom centre of the screen.
+- It types with a virtual keyboard of its own, so the machine's layout matters. Italian (`it`) and US (`us`) tables are included; the layout is read from GNOME (`org.gnome.desktop.input-sources`) or forced with `CEC_OSK_LAYOUT=it|us`. The Italian punctuation table was written from the xkb `it` layout and still has to be checked by typing every symbol.
+- Layers: letters, one-shot capital (⇧), digits and symbols (`?123`), plus space, backspace, enter and cursor left/right.
+- Needs `python3-gi` with GTK 3 and write access to `/dev/uinput`. `CEC_OSK_SNAPSHOT=/path.png` saves a picture of the window, for diagnostics.
+
+### GNOME shell and dock shortcuts
+
+The wizard has a *GNOME shell and dock* list with the shortcuts read from the test machine (GNOME Shell 48.7 with dash-to-dock): quick settings menu (`Super+S`), notifications (`Super+V`), application grid (`Super+A`), the dock's numbers overlay (`Super+Q`, 2 s, no focus), launch/switch to dock icon N (`Super+1…9`) and "focus the dock" (`Ctrl+Alt+Tab`: dash-to-dock registers itself in GNOME's system-controls switcher, after which the arrows move over the icons). The last one has not been verified with a single tap of a remote button.
+
 ### Mouse pointer
 
 On a machine that is shown on a TV the mouse pointer is just in the way. When a remote button is pressed (and the machine is on the TV screen, not in dry run) the receiver moves the pointer to the bottom-right corner, where the cursor image hangs off the screen, using a second virtual mouse ("TV Remote pointer mover"). If you move a real mouse afterwards the pointer starts again from that corner. It is on by default; the *Mouse pointer* card in the web UI switches it off (a file `~/cec-over-lan/pointer-visible` exists while it is off), `--no-hide-pointer` disables it permanently. It needs no desktop extension and no session restart.

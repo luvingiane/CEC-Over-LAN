@@ -263,17 +263,18 @@ async function loadApps() { try { APPS = (await api('/api/apps')).apps || []; } 
 const appName = id => { const a = APPS.find(x => x.id === id); return a ? a.name : id; };
 function describe(v) {
   if (!v) return '';
+  if (v === 'osk:toggle') return 'On-screen keyboard (open/close)';
   if (v.startsWith('app:')) return 'App: ' + appName(v.slice(4));
   if (v.startsWith('url:')) return 'Website: ' + v.slice(4);
   return v;
 }
-const typeOf = v => (v || '').startsWith('app:') ? 'app' : (v || '').startsWith('url:') ? 'url' : 'keys';
+const typeOf = v => v === 'osk:toggle' ? 'osk' : (v || '').startsWith('app:') ? 'app' : (v || '').startsWith('url:') ? 'url' : 'keys';
 
 // An action editor: type selector + the matching control. Calls onChange(textValue).
 function actionEditor(value, onChange) {
   const holder = el('div');
   const type = el('select');
-  [['keys', 'Keys'], ['app', 'App'], ['url', 'Website']].forEach(([v, t]) => type.append(el('option', { value: v, textContent: t })));
+  [['keys', 'Keys'], ['app', 'App'], ['url', 'Website'], ['osk', 'Keyboard']].forEach(([v, t]) => type.append(el('option', { value: v, textContent: t })));
   type.value = typeOf(value);
   function control() {
     holder.textContent = '';
@@ -287,6 +288,8 @@ function actionEditor(value, onChange) {
       sel.value = cur;
       sel.onchange = () => { value = sel.value ? 'app:' + sel.value : ''; onChange(value); };
       holder.append(sel);
+    } else if (t === 'osk') {
+      holder.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open: arrows move, OK types, Back closes.' }));
     } else if (t === 'url') {
       const i = el('input', { type: 'url', placeholder: 'https://…', value: (value || '').startsWith('url:') ? value.slice(4) : '',
         autocomplete: 'off', inputMode: 'url' });
@@ -300,7 +303,7 @@ function actionEditor(value, onChange) {
       holder.append(i);
     }
   }
-  type.onchange = () => { value = ''; onChange(''); control(); };
+  type.onchange = () => { value = type.value === 'osk' ? 'osk:toggle' : ''; onChange(value); control(); };
   control();
   return el('div', { className: 'act' }, type, holder);
 }
@@ -309,6 +312,21 @@ function actionEditor(value, onChange) {
 let rows = {};           // remote key -> { tap, long, hold } (text actions)
 
 function labelled(text, node) { return el('div', {}, el('label', { textContent: text }), node); }
+// The three fields of a mapping entry (tap, long press, hold time), for a key or for an app exception.
+function entryNodes(r) {
+  const holdIn = el('input', { type: 'number', step: '0.1', min: '0.3', max: '10', placeholder: '3',
+    inputMode: 'decimal', value: r.hold || '' });
+  holdIn.oninput = () => { r.hold = holdIn.value.trim(); };
+  return [labelled('Tap', actionEditor(r.tap, v => { r.tap = v; })),
+          labelled('Long press', actionEditor(r.long, v => { r.long = v; })),
+          labelled('Hold time for the long press (s)', holdIn)];
+}
+function entryToPayload(r) {
+  const item = {};
+  if (r.tap) item.tap = r.tap;
+  if (r.long) { item.long = r.long; if (r.hold !== '' && r.hold !== undefined) item.hold = parseFloat(r.hold); }
+  return item;
+}
 function renderRows() {
   const box = $('rows'); box.textContent = '';
   Object.keys(rows).forEach(key => {
@@ -318,21 +336,35 @@ function renderRows() {
     const del = el('button', { className: 'x', textContent: '×', title: 'Remove' });
     del.onclick = () => { delete rows[key]; renderRows(); };
     head.append(del);
-    const tap = labelled('Tap', actionEditor(r.tap, v => { r.tap = v; }));
-    const lng = labelled('Long press', actionEditor(r.long, v => { r.long = v; }));
-    const holdIn = el('input', { type: 'number', step: '0.1', min: '0.3', max: '10', placeholder: '3',
-      inputMode: 'decimal', value: r.hold || '' });
-    holdIn.oninput = () => { r.hold = holdIn.value.trim(); };
-    box.append(el('div', { className: 'rowcard' }, head, tap, lng, labelled('Hold time for the long press (s)', holdIn)));
+    const exBox = el('div');
+    const renderEx = () => {
+      exBox.textContent = '';
+      (r.apps = r.apps || []).forEach((ex, i) => {
+        const match = el('input', { value: ex.match || '', placeholder: 'app text, e.g. es-de', autocomplete: 'off' });
+        match.oninput = () => { ex.match = match.value.trim(); };
+        const rm = el('button', { className: 'x', textContent: '×', title: 'Remove this exception' });
+        rm.onclick = () => { r.apps.splice(i, 1); renderEx(); };
+        exBox.append(el('div', { className: 'rowcard exc' },
+          el('div', { className: 'rowhead' }, el('span', { textContent: 'When the focused app matches' }), rm),
+          match, ...entryNodes(ex)));
+      });
+    };
+    renderEx();
+    const addEx = el('button', { className: 'alt', textContent: 'Add an exception for an app' });
+    addEx.onclick = () => { (r.apps = r.apps || []).push({ match: '', tap: '', long: '', hold: '' }); renderEx(); };
+    box.append(el('div', { className: 'rowcard' }, head, ...entryNodes(r),
+      el('div', { className: 'hint', textContent: 'Exceptions replace the action while the focused app matches (class, title or process name, any part, no case). The first match wins. The Key monitor shows the app name of each press.' }),
+      exBox, addEx));
   });
   if (!Object.keys(rows).length) box.append(el('div', { className: 'hint', textContent: 'No keys mapped.' }));
 }
 function addRow(key, spec) { if (!rows[key]) rows[key] = spec || { tap: '', long: '', hold: '' }; renderRows(); }
 function rowsToPayload(src) {
   const keys = {};
-  Object.keys(src).forEach(k => { const r = src[k]; const item = {};
-    if (r.tap) item.tap = r.tap;
-    if (r.long) { item.long = r.long; if (r.hold !== '' && r.hold !== undefined) item.hold = parseFloat(r.hold); }
+  Object.keys(src).forEach(k => { const r = src[k]; const item = entryToPayload(r);
+    const apps = {};
+    (r.apps || []).forEach(ex => { const sub = entryToPayload(ex); if (ex.match && (sub.tap || sub.long)) apps[ex.match] = sub; });
+    if (Object.keys(apps).length) item.apps = apps;
     if (item.tap || item.long) keys[k] = item; });
   return keys;
 }
@@ -341,7 +373,9 @@ async function loadMap() {
     const r = await api('/api/keymap');
     rows = {};
     Object.keys(r.keys).forEach(k => { const s = r.keys[k];
-      rows[k] = { tap: s.tap || '', long: s.long || '', hold: s.hold === undefined ? '' : String(s.hold) }; });
+      rows[k] = { tap: s.tap || '', long: s.long || '', hold: s.hold === undefined ? '' : String(s.hold),
+        apps: Object.keys(s.apps || {}).map(m => { const a = s.apps[m];
+          return { match: m, tap: a.tap || '', long: a.long || '', hold: a.hold === undefined ? '' : String(a.hold) }; }) }; });
     const dl = $('names'); dl.textContent = '';
     r.key_names.forEach(n => dl.append(el('option', { value: n })));
     renderRows();
@@ -557,11 +591,12 @@ function wizRenderReview() {
 const M = { on: false, after: 0, timer: null, events: [], total: 0, off: 0, unmapped: 0 };
 const hhmmss = ts => { const d = new Date(ts * 1000); const p = (n, l = 2) => String(n).padStart(l, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`; };
+const monApp = ev => ev.app && ev.state === 'DOWN' ? ` · app: ${ev.app}` : '';
 function monWhat(ev) {
   if (ev.state === 'UP') return `released after ${ev.held === null ? '?' : ev.held.toFixed(2)} s · ${ev.result || '?'}`;
   if (ev.screen === false) return 'ignored: machine not on the TV screen';
   if (!ev.decision) return '(old log format)';
-  return ev.decision.replace(/^tap:/, 'would do: ').replace(/^wait-long-/, 'long press needed: ') + (ev.dry ? '  [dry run]' : '');
+  return ev.decision.replace(/^tap:/, 'would do: ').replace(/^wait-long-/, 'long press needed: ') + (ev.dry ? '  [dry run]' : '') + monApp(ev);
 }
 function monRender() {
   const last = M.events[M.events.length - 1];

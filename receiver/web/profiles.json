@@ -31,6 +31,7 @@
       "default": false,
       "source": "Linux evdev key names; overview and Alt+Tab as configured by GNOME Shell 48 on the test machine",
       "actions": [
+        {"id": "osk", "label": "On-screen keyboard (open / close)", "help": "Shows a keyboard on the screen. While it is open the arrows move, OK types the highlighted key and Back closes it; the same button closes it too", "target": "osk:toggle"},
         {"id": "overview", "label": "GNOME overview", "help": "Super key: shows all windows, pick one with arrows and Enter", "target": "KEY_LEFTMETA"},
         {"id": "alttab", "label": "Switch to the previous window", "help": "Alt+Tab from one key only toggles the last two windows", "target": "KEY_LEFTALT+KEY_TAB"},
         {"id": "playpause", "label": "Play / pause", "help": "Media play/pause", "target": "KEY_PLAYPAUSE"},
@@ -43,6 +44,28 @@
         {"id": "enter", "label": "Enter", "help": "Enter key", "target": "KEY_ENTER"},
         {"id": "backspace", "label": "Backspace", "help": "Backspace key", "target": "KEY_BACKSPACE"},
         {"id": "f11", "label": "Full screen (F11)", "help": "Toggle full screen in many programs", "target": "KEY_F11"}
+      ]
+    },
+    {
+      "id": "gnome",
+      "name": "GNOME shell and dock",
+      "default": false,
+      "source": "gsettings on the test machine (GNOME Shell 48.7): org.gnome.shell.keybindings and org.gnome.desktop.wm.keybindings; dash-to-dock schema and docking.js (hot-keys, shortcut, ctrlAltTabManager.addGroup)",
+      "actions": [
+        {"id": "quick", "label": "Quick settings menu", "help": "Super+S opens the quick settings menu (network, sound, power) in the top bar", "target": "KEY_LEFTMETA+KEY_S"},
+        {"id": "notif", "label": "Notifications and calendar", "help": "Super+V (or Super+M) opens the notification list and calendar", "target": "KEY_LEFTMETA+KEY_V"},
+        {"id": "appgrid", "label": "Application grid", "help": "Super+A shows all installed applications", "target": "KEY_LEFTMETA+KEY_A"},
+        {"id": "focusdock", "label": "Focus the dock or top bar (then use the arrows)", "help": "Ctrl+Alt+Tab opens the system-controls switcher; the dock registers itself there, so it can then be navigated with the arrows. Not verified with a single tap of a remote key: if it does not select, bind it twice or use the dock items below", "target": "KEY_LEFTCTRL+KEY_LEFTALT+KEY_TAB"},
+        {"id": "dockshow", "label": "Show the dock with its numbers", "help": "Super+Q shows the dock with a number on each icon for 2 seconds (it does not give it focus)", "target": "KEY_LEFTMETA+KEY_Q"},
+        {"id": "dock1", "label": "Dock icon 1", "help": "Super+1 launches or switches to the first icon of the dock", "target": "KEY_LEFTMETA+KEY_1"},
+        {"id": "dock2", "label": "Dock icon 2", "help": "Super+2", "target": "KEY_LEFTMETA+KEY_2"},
+        {"id": "dock3", "label": "Dock icon 3", "help": "Super+3", "target": "KEY_LEFTMETA+KEY_3"},
+        {"id": "dock4", "label": "Dock icon 4", "help": "Super+4", "target": "KEY_LEFTMETA+KEY_4"},
+        {"id": "dock5", "label": "Dock icon 5", "help": "Super+5", "target": "KEY_LEFTMETA+KEY_5"},
+        {"id": "dock6", "label": "Dock icon 6", "help": "Super+6", "target": "KEY_LEFTMETA+KEY_6"},
+        {"id": "dock7", "label": "Dock icon 7", "help": "Super+7", "target": "KEY_LEFTMETA+KEY_7"},
+        {"id": "dock8", "label": "Dock icon 8", "help": "Super+8", "target": "KEY_LEFTMETA+KEY_8"},
+        {"id": "dock9", "label": "Dock icon 9", "help": "Super+9", "target": "KEY_LEFTMETA+KEY_9"}
       ]
     },
     {

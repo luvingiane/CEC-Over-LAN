@@ -16,7 +16,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T9 Mapping | PARTIAL |
 | T10 systemd unit | PREPARED, NOT INSTALLED |
 | T11 Inject only while the machine is on screen | OK |
-| T12 Pairing web UI | PARTIAL (real pairing not yet exercised) |
+| T12 Pairing web UI | OK (confirmed on a phone; auto-detect unverified) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -102,9 +102,10 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Why:** after a standby or reboot the pairing and the port are lost (T4/T6); doing it on the machine shown on the TV is awkward, so it is done from a phone.
 **Done:** `receiver/tv_remote_web.py` + `receiver/web/index.html` (stdlib only), `receiver/tv-remote-web.service`; the receiver now runs from `receiver/tv-remote.service` with its target read from `~/cec-over-lan/tv-remote.env`. Both are user units, enabled.
 **DONE (tests from another LAN machine):** page served (HTTP 200); API without token -> 401; with token `/api/status` returns the service, link and target; a public IP, a port with shell characters, a short code and an unknown service action are all rejected; the page JavaScript passes `node --check`.
-**Not tested:** a real `adb pair` / `adb connect` through the page (the TV's wireless debugging was off), the mDNS auto-detect (found nothing, wireless debugging off), rendering on a phone.
+**DONE (owner's test on a phone):** the page works; the screenshot (`docs/web-ui.png`, IP and ports redacted) shows `Receiver service: active`, `TV link (adb): device`, `Machine on TV screen: yes` after pairing and connecting from the page. The pairing and connection steps themselves were not captured step by step.
+**Not tested:** the mDNS auto-detect button (it found nothing with wireless debugging off; not retried).
 **Risks:** anyone on the LAN who has the token can pair/connect adb and restart the service; the token is stored in `~/cec-over-lan/token` (0600). Do not expose the port to the internet.
-**Outcome:** PARTIAL (works up to the adb calls; real pairing not yet exercised).
+**Outcome:** OK (confirmed by the owner on a phone); auto-detect still unverified.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

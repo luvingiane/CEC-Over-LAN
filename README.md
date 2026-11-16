@@ -55,9 +55,15 @@ systemctl --user daemon-reload && systemctl --user enable --now tv-remote tv-rem
 cat ~/cec-over-lan/token          # access token, created on first start (mode 0600)
 ```
 
+<p align="center"><img src="docs/web-ui.png" alt="The pairing web UI on a phone (IP and ports redacted)" width="320"></p>
+
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 
 Security: it answers only to private (RFC 1918) addresses, every API call needs the token, inputs are validated and no shell is used. It is meant for a trusted home LAN: do not forward its port to the internet.
+
+## Roadmap
+
+**Coming next: an Android APK for the TV** that uses an AccessibilityService to capture the remote's keys and send them to the machine. This removes the dependency on wireless debugging, which is switched off by a standby or a reboot (see T4 and T6 in REPORT.md), and with it the need to re-pair by hand. Until then, the web UI above is the stopgap.
 
 ## Known limits
 

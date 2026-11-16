@@ -264,7 +264,8 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 **DONE (tests):** 83 offline tests pass; the map tests cover Back sent as Esc, colour buttons on F1/F9, the Steam exception winning over others, long presses and combinations skipped, the priority between two buttons on one key, and the Italian "Invio".
 **DONE (real screen, captured from Steam through the debug port):** the footer shows a red **R** for MENU (F1), a blue **B** for OPZIONI (F9), **OK** for SELEZIONA (Invio) and **←** for INDIETRO (Esc).
 **Installed on the machine:** the watcher service (active, 12 glyphs). The owner's own `~/.local/share/applications/steam.desktop` already existed; after a backup (`steam.desktop.bak-20261116-203110`) its main `Exec` and the Big Picture `Exec` got `-cef-enable-debugging`, so Steam keeps the debug port. Revert: restore the backup.
-**Not verified:** the Italian names of the other keys (only Invio is confirmed), other Steam screens than the home footer, a Steam restart from the launcher (the watcher should re-inject), a reboot.
+**DONE (restart, owner asked "Riavvia"):** Steam shut down with SIGTERM and started again through the owner's own `steam.desktop` (`gio launch`): the debug port opened after about 6 s and the watcher re-injected the icons by itself (`waiting for Steam` then `installed`). One form of the command did not start Steam at all (`steam -cef-enable-debugging steam://open/bigpicture` run as a transient unit): the launcher's main `Exec` is the one verified. Steam then showed the Big Picture window.
+**Not verified:** the Italian names of the other keys (only Invio is confirmed), other Steam screens than the home footer, a reboot of the machine.
 **Outcome:** OK on the home screen of Big Picture; the rest to be checked by the owner.
 
 ## Recommendation (provisional)

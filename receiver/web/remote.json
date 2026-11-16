@@ -1,0 +1,54 @@
+{
+  "name": "Xiaomi Google TV remote (photo supplied by the owner)",
+  "note": "code = the Linux key name the TV's kernel reports for the button (what `adb shell getevent -l` prints). null = not known yet: tap the button in the web UI and use Learn. guess = deduced, not confirmed on the remote.",
+  "buttons": {
+    "power":   {"label": "⏻", "title": "Power", "code": "KEY_POWER", "guess": true},
+    "mic":     {"label": "🎙", "title": "Voice / Assistant", "code": null},
+
+    "n1": {"label": "1", "title": "1", "code": "KEY_1", "guess": true},
+    "n2": {"label": "2", "title": "2", "code": "KEY_2", "guess": true},
+    "n3": {"label": "3", "title": "3", "code": "KEY_3", "guess": true},
+    "n4": {"label": "4", "title": "4", "code": "KEY_4", "guess": true},
+    "n5": {"label": "5", "title": "5", "code": "KEY_5", "guess": true},
+    "n6": {"label": "6", "title": "6", "code": "KEY_6", "guess": true},
+    "n7": {"label": "7", "title": "7", "code": "KEY_7", "guess": true},
+    "n8": {"label": "8", "title": "8", "code": "KEY_8"},
+    "n9": {"label": "9", "title": "9", "code": "KEY_9", "guess": true},
+    "n0": {"label": "0", "title": "0", "code": "KEY_0"},
+
+    "info":    {"label": "INFO",  "title": "Info", "code": null},
+    "ttx":     {"label": "TTX",   "title": "Teletext", "code": "KEY_FIND", "guess": true},
+    "source":  {"label": "↵□", "title": "Input / source", "code": null},
+    "epg":     {"label": "EPG",   "title": "Programme guide", "code": null},
+    "audio":   {"label": "AUDIO", "title": "Audio", "code": null},
+
+    "netflix": {"label": "NETFLIX",      "title": "Netflix button", "code": null},
+    "prime":   {"label": "prime video",  "title": "Prime Video button", "code": null},
+    "youtube": {"label": "YouTube",      "title": "YouTube button", "code": null},
+    "tvplus":  {"label": "TV+",          "title": "TV+ button", "code": null},
+    "star":    {"label": "★",       "title": "Star / favourite", "code": null},
+    "livetv":  {"label": "Live TV",      "title": "Live TV button", "code": null},
+
+    "up":    {"label": "▲", "title": "Up", "code": "KEY_UP"},
+    "down":  {"label": "▼", "title": "Down", "code": "KEY_DOWN"},
+    "left":  {"label": "◀", "title": "Left", "code": "KEY_LEFT"},
+    "right": {"label": "▶", "title": "Right", "code": "KEY_RIGHT"},
+    "ok":    {"label": "OK", "title": "OK / Select", "code": "KEY_SELECT"},
+
+    "settings": {"label": "⚙", "title": "Settings", "code": null},
+    "back":     {"label": "←", "title": "Back", "code": "KEY_BACK"},
+    "home":     {"label": "⌂", "title": "Home", "code": "KEY_HOMEPAGE"},
+
+    "volup":   {"label": "+", "title": "Volume +", "code": "KEY_VOLUMEUP"},
+    "voldown": {"label": "−", "title": "Volume −", "code": "KEY_VOLUMEDOWN"},
+    "exit":    {"label": "EXIT", "title": "Exit", "code": "KEY_EXIT"},
+    "mute":    {"label": "MUTE", "title": "Mute", "code": null},
+    "chup":    {"label": "∧", "title": "Channel +", "code": "KEY_CHANNELUP"},
+    "chdown":  {"label": "∨", "title": "Channel −", "code": "KEY_CHANNELDOWN"},
+
+    "red":    {"label": "R", "title": "Red", "code": "KEY_STOPCD"},
+    "green":  {"label": "G", "title": "Green", "code": "KEY_EJECTCD"},
+    "yellow": {"label": "Y", "title": "Yellow", "code": "KEY_SHUFFLE"},
+    "blue":   {"label": "B", "title": "Blue", "code": "KEY_SEARCH"}
+  }
+}

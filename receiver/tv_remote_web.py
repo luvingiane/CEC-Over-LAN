@@ -319,6 +319,58 @@ def profiles(_q=None):
         return {"ok": False, "message": "profiles.json is missing or broken", "profiles": []}
 
 
+LEARNED_FILE = STATE_DIR / "remote-learned.json"
+
+
+def _read_learned():
+    try:
+        data = json.loads(LEARNED_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def remote_model():
+    """The physical remote: its buttons and the key code each one sends (learned codes win)."""
+    try:
+        model = json.loads((HERE / "web" / "remote.json").read_text())
+    except (OSError, ValueError):
+        return {"ok": False, "message": "remote.json is missing or broken", "buttons": {}}
+    for bid, code in _read_learned().items():
+        btn = model["buttons"].get(bid)
+        if btn is not None and isinstance(code, str) and core.KEY_NAME.match(code):
+            btn["code"], btn["learned"] = code, True
+            btn.pop("guess", None)
+    return {"ok": True, **model}
+
+
+def get_remote(_q=None):
+    return remote_model()
+
+
+def do_remote(data):
+    """Learn the code of a button ({"id", "code"}) or go back to the default ({"id", "reset": true})."""
+    bid, code = data.get("id"), data.get("code")
+    if bid not in remote_model()["buttons"]:
+        return {"ok": False, "message": "unknown button"}
+    learned = _read_learned()
+    if data.get("reset") is True:
+        learned.pop(bid, None)
+    elif isinstance(code, str) and core.KEY_NAME.match(code):
+        for other in [k for k, v in learned.items() if v == code and k != bid]:
+            del learned[other]          # one code belongs to one button
+        learned[bid] = code
+    else:
+        return {"ok": False, "message": "invalid key code"}
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = LEARNED_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(learned, f, indent=2)
+    os.replace(tmp, LEARNED_FILE)
+    return {"ok": True, "message": "saved"}
+
+
 def get_keymap(_q=None):
     defaults = core.default_keymap()
     source, keys = "defaults", defaults
@@ -407,10 +459,10 @@ def recent(_q=None):
 
 POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service,
         "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset, "/api/dryrun": do_dryrun,
-        "/api/pointer": do_pointer}
+        "/api/pointer": do_pointer, "/api/remote": do_remote}
 GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
        "/api/recent": recent, "/api/apps": list_apps, "/api/events": events,
-       "/api/profiles": profiles, "/api/monitor": monitor}
+       "/api/profiles": profiles, "/api/monitor": monitor, "/api/remote": get_remote}
 
 
 class Handler(BaseHTTPRequestHandler):

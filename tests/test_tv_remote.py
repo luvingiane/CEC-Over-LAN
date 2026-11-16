@@ -563,6 +563,59 @@ class OskControllerTests(unittest.TestCase):
         self.assertIsNone(core.parse_action("osk:evil"))
 
 
+class RemoteModel(unittest.TestCase):
+    def setUp(self):
+        import tv_remote_web as web
+        self.web = web
+        self.old = web.LEARNED_FILE
+        web.LEARNED_FILE = Path(tempfile.mkdtemp()) / "remote-learned.json"
+
+    def tearDown(self):
+        self.web.LEARNED_FILE = self.old
+
+    def test_the_model_is_consistent(self):
+        m = self.web.remote_model()
+        self.assertTrue(m["ok"])
+        buttons = m["buttons"]
+        self.assertEqual(buttons["ok"]["code"], "KEY_SELECT")
+        self.assertEqual(buttons["back"]["code"], "KEY_BACK")
+        codes = [b["code"] for b in buttons.values() if b["code"]]
+        self.assertEqual(len(codes), len(set(codes)), "two buttons share a code")
+        for code in codes:
+            self.assertRegex(code, r"^KEY_[A-Z0-9_]+$")
+        for bid in ("up", "down", "left", "right", "ok", "back", "home", "exit", "red", "green",
+                    "yellow", "blue", "n0", "n9", "volup", "chup"):
+            self.assertIn(bid, buttons)
+
+    def test_the_known_codes_agree_with_what_the_logs_showed(self):
+        b = self.web.remote_model()["buttons"]
+        self.assertEqual([b[k]["code"] for k in ("red", "green", "yellow", "blue")],
+                         ["KEY_STOPCD", "KEY_EJECTCD", "KEY_SHUFFLE", "KEY_SEARCH"])
+        self.assertEqual(b["exit"]["code"], "KEY_EXIT")
+        self.assertIsNone(b["netflix"]["code"])      # unknown until learned, never invented
+
+    def test_learning_a_button_and_going_back(self):
+        self.assertTrue(self.web.do_remote({"id": "info", "code": "KEY_INFO"})["ok"])
+        info = self.web.remote_model()["buttons"]["info"]
+        self.assertEqual((info["code"], info["learned"]), ("KEY_INFO", True))
+        self.web.do_remote({"id": "ok", "code": "KEY_ENTER"})       # a learned code replaces the default
+        self.assertEqual(self.web.remote_model()["buttons"]["ok"]["code"], "KEY_ENTER")
+        self.web.do_remote({"id": "ok", "reset": True})             # and can be reset
+        self.assertEqual(self.web.remote_model()["buttons"]["ok"]["code"], "KEY_SELECT")
+
+    def test_a_code_belongs_to_one_button(self):
+        self.web.do_remote({"id": "info", "code": "KEY_INFO"})
+        self.web.do_remote({"id": "epg", "code": "KEY_INFO"})
+        b = self.web.remote_model()["buttons"]
+        self.assertEqual(b["epg"]["code"], "KEY_INFO")
+        self.assertIsNone(b["info"]["code"])                        # the first one is unlearned again
+
+    def test_bad_input_is_rejected(self):
+        for bad in ({"id": "nope", "code": "KEY_A"}, {"id": "info", "code": "rm -rf"},
+                    {"id": "info", "code": None}, {"id": "info"}, {"code": "KEY_A"}):
+            self.assertFalse(self.web.do_remote(bad)["ok"], bad)
+
+
 class Actions(unittest.TestCase):
     def test_parse_action_kinds(self):
         self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})

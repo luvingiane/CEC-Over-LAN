@@ -61,52 +61,121 @@
   .badge.on { color:var(--ok); } .badge.offs { color:var(--bad); }
   .radio { display:flex; gap:10px; align-items:flex-start; margin:8px 0; font-size:14px; }
   .radio input { width:auto; margin-top:4px; }
+
+  body { padding-bottom: 84px; }
+  header.top { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line);
+               padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .brand { font-size:16px; white-space:nowrap; }
+  .pills { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  .pill { font-size:12px; font-weight:600; padding:3px 9px; border-radius:999px; border:1px solid var(--line);
+          color:var(--muted); background:var(--card); cursor:pointer; }
+  .pill.ok { color:var(--ok); } .pill.bad { color:var(--bad); } .pill.dry { color:#d98b00; border-color:#d98b00; }
+  .tab { display:none; } .tab.on { display:block; }
+  nav.bar { position:fixed; left:0; right:0; bottom:0; z-index:6; display:grid; grid-template-columns:repeat(4,1fr);
+            background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+  nav.bar button { margin:0; border-radius:0; background:transparent; color:var(--muted); font-size:12px;
+                   padding:8px 0 10px; display:flex; flex-direction:column; align-items:center; gap:2px; font-weight:600; }
+  nav.bar button span { font-size:20px; line-height:1; }
+  nav.bar button.on { color:var(--accent); }
+  details.card > summary { cursor:pointer; font-size:15px; font-weight:600; }
+  details.card[open] > summary { margin-bottom:10px; }
+
+  #pad { max-width:340px; margin:12px auto 6px; display:flex; flex-direction:column; align-items:center; gap:12px;
+         padding:18px 14px 22px; background:#0d0f12; border-radius:40px; border:1px solid var(--line); }
+  .prow { display:flex; gap:12px; justify-content:center; align-items:center; width:100%; }
+  .prow.between { justify-content:space-between; padding:0 8px; }
+  .pb { margin:0; padding:0; width:auto; border:1px solid #3a404b; background:#23272e; color:#eceef2; font-size:14px;
+        font-weight:700; position:relative; transition:background .12s; }
+  .pb.round { width:56px; height:56px; border-radius:50%; }
+  .pb.sm { width:66px; height:44px; border-radius:22px; font-size:12px; }
+  .pb.pillb { flex:1; height:42px; border-radius:21px; background:#f2f4f8; color:#1b1d21; font-size:13px; }
+  .pb.col { width:44px; height:44px; border-radius:50%; color:#101216; }
+  .pb.col.red { background:#d9534f; } .pb.col.green { background:#3ba55d; }
+  .pb.col.yellow { background:#e8c547; } .pb.col.blue { background:#3b8eea; }
+  .rocker { width:62px; border-radius:31px; background:#1a1d22; border:1px solid #3a404b; display:flex; flex-direction:column; overflow:hidden; }
+  .rocker .pb { width:100%; height:54px; border:0; border-radius:0; background:transparent; font-size:22px; }
+  .stack { display:flex; flex-direction:column; gap:14px; }
+  .dpad { position:relative; width:230px; height:230px; border-radius:50%; background:#1a1d22; border:1px solid #3a404b; }
+  .dpad .pb { position:absolute; border:0; background:transparent; width:64px; height:64px; border-radius:50%; font-size:20px; }
+  .dpad .up { top:6px; left:83px; } .dpad .down { bottom:6px; left:83px; }
+  .dpad .left { left:6px; top:83px; } .dpad .right { right:6px; top:83px; }
+  .dpad .okb { left:62px; top:62px; width:106px; height:106px; background:#0d0f12; border:1px solid #3a404b; font-size:18px; }
+  .pb.bound { box-shadow:0 0 0 2px var(--accent); }
+  .pb.unknown { border-style:dashed; opacity:.78; }
+  .pb.guess::after { content:'~'; position:absolute; top:0; right:5px; font-size:12px; color:#d98b00; }
+  .pb.live { background:var(--accent) !important; color:#fff !important; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:center; font-size:12px; color:var(--muted); margin-top:8px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+  .dot.b { box-shadow:0 0 0 2px var(--accent); } .dot.u { border:1px dashed var(--muted); } .dot.g { background:#d98b00; }
+
+  #sheetBg { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:20; }
+  #sheet { position:fixed; left:0; right:0; bottom:0; max-height:92vh; overflow:auto; z-index:21; background:var(--card);
+           border-radius:18px 18px 0 0; padding:16px 16px 30px; box-shadow:0 -8px 30px rgba(0,0,0,.4); }
+  #sheet[hidden], #sheetBg[hidden], .toast[hidden], .pill[hidden] { display:none; }
+  .seg { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
+  .seg button { width:auto; flex:1 1 auto; margin:0; padding:10px 8px; font-size:14px; background:transparent;
+                color:var(--fg); border:1px solid var(--line); }
+  .seg button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .keys { display:grid; grid-template-columns:repeat(auto-fill,minmax(50px,1fr)); gap:6px; margin:8px 0; }
+  .keys button { margin:0; padding:12px 2px; font-size:15px; background:var(--bg); color:var(--fg); border:1px solid var(--line); }
+  .keys button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .combo { font-size:20px; font-weight:700; text-align:center; padding:10px; border:1px dashed var(--line);
+           border-radius:10px; min-height:48px; }
+  .applist { max-height:230px; overflow:auto; border:1px solid var(--line); border-radius:10px; margin:8px 0; }
+  .applist button { text-align:left; margin:0; border-radius:0; background:transparent; color:var(--fg);
+                    border:0; border-bottom:1px solid var(--line); padding:12px; font-size:15px; font-weight:500; }
+  .applist button.on { color:var(--accent); font-weight:700; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:96px; background:rgba(0,0,0,.82); color:#fff;
+           padding:9px 16px; border-radius:20px; font-size:13px; z-index:30; max-width:90vw; text-align:center; }
+  .sheethead { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .sheethead small { color:var(--muted); font-weight:400; }
+  .stepper { display:flex; align-items:center; gap:10px; margin:6px 0; }
+  .stepper button { width:48px; margin:0; padding:8px 0; }
+  .stepper b { min-width:60px; text-align:center; }
 </style>
 </head>
 <body>
+<header class="top">
+  <b class="brand">CEC-Over-LAN</b>
+  <div class="pills" id="pills">
+    <span class="pill" id="pService">receiver</span>
+    <span class="pill" id="pLink">TV</span>
+    <span class="pill" id="pScreen">screen</span>
+    <span class="pill dry" id="pDry" hidden>DRY RUN</span>
+  </div>
+</header>
 <main>
-  <h1>CEC-Over-LAN</h1>
 
-  <div class="card">
-    <h2>Status</h2>
-    <div class="row"><span>Receiver service</span><span id="sService">…</span></div>
-    <div class="row"><span>TV link (adb)</span><span id="sLink">…</span></div>
-    <div class="row"><span>Machine on TV screen</span><span id="sScreen">…</span></div>
-    <div class="row"><span>Target</span><span id="sTarget">…</span></div>
-  </div>
-
-  <div class="card">
-    <h2>Dry run</h2>
-    <label class="radio"><input type="checkbox" id="dryCb">
-      <span><b>Dry run</b>: remote buttons do NOT press anything or launch anything on the machine; the receiver only lists what it would do.</span></label>
-    <div class="msg" id="mDry"></div>
-    <div class="hint">Latest actions (newest last). "would …" = dry run, nothing happened; "LAUNCHED" = a real launch:</div>
-    <div class="hint" id="dryList">—</div>
-  </div>
-
-  <div class="card">
-    <h2>Mouse pointer</h2>
-    <label class="radio"><input type="checkbox" id="ptrCb">
-      <span><b>Hide the mouse pointer</b> when a remote button is pressed (it is moved to the top-right corner, out of the way; not to the bottom, where an auto-hide dock would pop up).
-        If you move the mouse afterwards, the pointer starts again from that corner.</span></label>
-    <div class="msg" id="mPtr"></div>
-  </div>
-
-  <div class="card" id="monCard">
-    <h2>Key monitor</h2>
-    <div class="hint">Shows every button the receiver gets, <b>also when the machine is not on the TV screen</b>
-      ("off-screen"), and what it decided to do with it. Use it to see which buttons still reach the machine.</div>
-    <div class="grid">
-      <button id="bMon">Start monitor</button>
-      <button class="alt" id="bMonClear">Clear</button>
+<section class="tab on" id="tab-remote">
+  <div class="card padcard">
+    <h2>Your remote</h2>
+    <div class="hint">Tap a button to choose what it does. Press a button on the real remote and it lights up here.</div>
+    <div id="pad"></div>
+    <div class="legend">
+      <span><i class="dot b"></i> has a binding</span>
+      <span><i class="dot u"></i> code not known: tap it, then <b>Learn</b></span>
+      <span><i class="dot g"></i> code guessed</span>
     </div>
-    <div class="big" id="monKey">—</div>
-    <div class="chips" id="monBadges"></div>
-    <div class="hint" id="monStats">stopped</div>
-    <label class="radio"><input type="checkbox" id="monOff"><span>Show only off-screen buttons</span></label>
-    <div id="monTable"></div>
   </div>
+    <details class="card">
+    <summary>All bindings (list editor)</summary>
+    <div class="hint">Press a key on the remote (with the machine on screen): it shows up here. Tap it to add a row.
+      Each key has a <b>Tap</b> action and, if you want, a <b>Long press</b> action (fired once after the hold time).
+      An action can press keys (combos use +, e.g. KEY_LEFTCTRL+KEY_C), launch an <b>App</b> or open a <b>Website</b>.</div>
+    <div class="chips" id="recent"><span class="hint">no keys seen yet</span></div>
+    <div id="rows"></div>
+    <div class="grid">
+      <button class="alt" id="bAddNum">Add numbers 0–9</button>
+      <button class="alt" id="bAddKey">Add key by name</button>
+    </div>
+    <button id="bSave">Save mapping</button>
+    <button class="alt" id="bReset">Reset to defaults</button>
+    <div class="msg" id="mMap"></div>
+    <datalist id="names"></datalist>
+  </details>
+</section>
 
+<section class="tab" id="tab-setup">
   <div class="card">
     <h2>1. Pair (only if asked)</h2>
     <ol>
@@ -138,22 +207,49 @@
     <h2>3. Setup wizard</h2>
     <div id="wiz"></div>
   </div>
+</section>
+
+<section class="tab" id="tab-monitor">
+  <div class="card" id="monCard">
+    <h2>Key monitor</h2>
+    <div class="hint">Shows every button the receiver gets, <b>also when the machine is not on the TV screen</b>
+      ("off-screen"), and what it decided to do with it. Use it to see which buttons still reach the machine.</div>
+    <div class="grid">
+      <button id="bMon">Start monitor</button>
+      <button class="alt" id="bMonClear">Clear</button>
+    </div>
+    <div class="big" id="monKey">—</div>
+    <div class="chips" id="monBadges"></div>
+    <div class="hint" id="monStats">stopped</div>
+    <label class="radio"><input type="checkbox" id="monOff"><span>Show only off-screen buttons</span></label>
+    <div id="monTable"></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-settings">
+<div class="card">
+    <h2>Status</h2>
+    <div class="row"><span>Receiver service</span><span id="sService">…</span></div>
+    <div class="row"><span>TV link (adb)</span><span id="sLink">…</span></div>
+    <div class="row"><span>Machine on TV screen</span><span id="sScreen">…</span></div>
+    <div class="row"><span>Target</span><span id="sTarget">…</span></div>
+  </div>
 
   <div class="card">
-    <h2>Key mapping</h2>
-    <div class="hint">Press a key on the remote (with the machine on screen): it shows up here. Tap it to add a row.
-      Each key has a <b>Tap</b> action and, if you want, a <b>Long press</b> action (fired once after the hold time).
-      An action can press keys (combos use +, e.g. KEY_LEFTCTRL+KEY_C), launch an <b>App</b> or open a <b>Website</b>.</div>
-    <div class="chips" id="recent"><span class="hint">no keys seen yet</span></div>
-    <div id="rows"></div>
-    <div class="grid">
-      <button class="alt" id="bAddNum">Add numbers 0–9</button>
-      <button class="alt" id="bAddKey">Add key by name</button>
-    </div>
-    <button id="bSave">Save mapping</button>
-    <button class="alt" id="bReset">Reset to defaults</button>
-    <div class="msg" id="mMap"></div>
-    <datalist id="names"></datalist>
+    <h2>Dry run</h2>
+    <label class="radio"><input type="checkbox" id="dryCb">
+      <span><b>Dry run</b>: remote buttons do NOT press anything or launch anything on the machine; the receiver only lists what it would do.</span></label>
+    <div class="msg" id="mDry"></div>
+    <div class="hint">Latest actions (newest last). "would …" = dry run, nothing happened; "LAUNCHED" = a real launch:</div>
+    <div class="hint" id="dryList">—</div>
+  </div>
+
+  <div class="card">
+    <h2>Mouse pointer</h2>
+    <label class="radio"><input type="checkbox" id="ptrCb">
+      <span><b>Hide the mouse pointer</b> when a remote button is pressed (it is moved to the top-right corner, out of the way; not to the bottom, where an auto-hide dock would pop up).
+        If you move the mouse afterwards, the pointer starts again from that corner.</span></label>
+    <div class="msg" id="mPtr"></div>
   </div>
 
   <div class="card">
@@ -164,7 +260,19 @@
     </div>
     <div class="msg" id="mSvc"></div>
   </div>
+</section>
 </main>
+
+<nav class="bar" id="bar">
+  <button data-tab="remote" class="on"><span>🎛</span>Remote</button>
+  <button data-tab="setup"><span>🔌</span>Setup</button>
+  <button data-tab="monitor"><span>📡</span>Monitor</button>
+  <button data-tab="settings"><span>⚙</span>Settings</button>
+</nav>
+<div id="sheetBg" hidden></div>
+<div id="sheet" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
 
 <script>
 const $ = id => document.getElementById(id);
@@ -198,6 +306,13 @@ async function refresh() {
     setClass($('sLink'), s.link, s.link === 'device');
     setClass($('sScreen'), s.on_screen, s.on_screen === 'yes');
     $('sTarget').textContent = s.target || 'not set';
+    const pill = (id, text, ok) => { const p = $(id); p.textContent = text; p.className = 'pill ' + (ok ? 'ok' : 'bad'); };
+    pill('pService', 'receiver ' + (s.service === 'active' ? '\u2713' : '\u2717'), s.service === 'active');
+    pill('pLink', 'TV ' + (s.link === 'device' ? '\u2713' : '\u2717'), s.link === 'device');
+    pill('pScreen', 'screen ' + (s.on_screen === 'yes' ? '\u2713' : s.on_screen === 'no' ? '\u2717' : '?'), s.on_screen === 'yes');
+    $('pService').title = 'Receiver service: ' + s.service; $('pLink').title = 'adb link to the TV: ' + s.link;
+    $('pScreen').title = 'Is this machine on the TV screen: ' + s.on_screen;
+    $('pDry').hidden = !s.dry_run;
     if (document.activeElement !== $('ptrCb')) $('ptrCb').checked = !!s.hide_pointer;
     if (document.activeElement !== $('dryCb')) $('dryCb').checked = !!s.dry_run;
     $('mDry').textContent = s.dry_run ? 'Dry run is ON: buttons do nothing on the machine.' : 'Dry run is OFF: buttons are applied for real.';
@@ -357,6 +472,7 @@ function renderRows() {
       exBox, addEx));
   });
   if (!Object.keys(rows).length) box.append(el('div', { className: 'hint', textContent: 'No keys mapped.' }));
+  if (typeof renderPad === 'function') renderPad();
 }
 function addRow(key, spec) { if (!rows[key]) rows[key] = spec || { tap: '', long: '', hold: '' }; renderRows(); }
 function rowsToPayload(src) {
@@ -633,10 +749,271 @@ $('bMon').onclick = async () => {
 $('bMonClear').onclick = () => { M.events = []; M.total = M.off = M.unmapped = 0; monRender(); };
 $('monOff').onchange = monRender;
 
+// ---------- tabs, toast ----------
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + name));
+  document.querySelectorAll('#bar button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  try { localStorage.setItem('cecTab', name); } catch (e) {}
+  if (name === 'remote') liveStart(); else liveStop();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('#bar button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+['pService', 'pLink', 'pScreen', 'pDry'].forEach(id => $(id).onclick = () => showTab('settings'));
+let toastTimer = null;
+function toast(text) {
+  const t = $('toast'); t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+}
+
+// ---------- the drawn remote ----------
+let REMOTE = { buttons: {} };
+async function loadRemote() { try { const r = await api('/api/remote'); if (r.ok) REMOTE = r; } catch (e) {} renderPad(); }
+function codeToButton() {
+  const m = {}; Object.entries(REMOTE.buttons).forEach(([id, b]) => { if (b.code) m[b.code] = id; }); return m;
+}
+const isBound = code => { const r = code && rows[code]; return !!(r && (r.tap || r.long || (r.apps || []).length)); };
+function pbtn(id, cls) {
+  const b = REMOTE.buttons[id]; if (!b) return el('span');
+  const n = el('button', { className: 'pb ' + cls, textContent: b.label, title: b.title });
+  n.dataset.id = id;
+  if (!b.code) n.classList.add('unknown');
+  else { if (isBound(b.code)) n.classList.add('bound'); if (b.guess) n.classList.add('guess'); }
+  n.onclick = () => openSheet(id);
+  return n;
+}
+function renderPad() {
+  const pad = $('pad'); if (!pad) return; pad.textContent = '';
+  const row = (cls, ...kids) => el('div', { className: 'prow ' + cls }, ...kids);
+  const rocker = (a, b) => el('div', { className: 'rocker' }, pbtn(a, ''), pbtn(b, ''));
+  pad.append(row('between', pbtn('power', 'round'), pbtn('mic', 'round')));
+  [['n1', 'n2', 'n3'], ['n4', 'n5', 'n6'], ['n7', 'n8', 'n9']].forEach(r => pad.append(row('', ...r.map(i => pbtn(i, 'round')))));
+  pad.append(row('', pbtn('info', 'sm'), pbtn('n0', 'round'), pbtn('ttx', 'sm')));
+  pad.append(row('', pbtn('source', 'sm'), pbtn('epg', 'sm'), pbtn('audio', 'sm')));
+  pad.append(row('', pbtn('netflix', 'pillb'), pbtn('prime', 'pillb')));
+  pad.append(row('', pbtn('youtube', 'pillb'), pbtn('tvplus', 'pillb')));
+  pad.append(row('', pbtn('star', 'pillb'), pbtn('livetv', 'pillb')));
+  pad.append(el('div', { className: 'dpad' }, pbtn('up', 'up'), pbtn('left', 'left'), pbtn('right', 'right'), pbtn('down', 'down'), pbtn('ok', 'okb')));
+  pad.append(row('', pbtn('settings', 'round'), pbtn('back', 'round'), pbtn('home', 'round')));
+  pad.append(row('', rocker('volup', 'voldown'), el('div', { className: 'stack' }, pbtn('exit', 'sm'), pbtn('mute', 'sm')), rocker('chup', 'chdown')));
+  pad.append(row('', ...['red', 'green', 'yellow', 'blue'].map(i => pbtn(i, 'col ' + i))));
+}
+
+// ---------- real key presses: light the drawn button; learn a code ----------
+const L = { timer: null, after: 0 };
+async function liveStart() {
+  if (L.timer) return;
+  L.timer = -1;   // reserve the slot while the first request is in flight
+  try { L.after = (await api('/api/events?after=9999999999')).now; } catch (e) { L.after = Date.now() / 1000; }
+  if (L.timer === -1) L.timer = setInterval(livePoll, 700);
+}
+function liveStop() { if (L.timer && L.timer !== -1) clearInterval(L.timer); L.timer = null; }
+async function livePoll() {
+  try {
+    const r = await api('/api/events?after=' + L.after);
+    r.events.forEach(ev => { L.after = Math.max(L.after, ev.ts); onRealKey(ev.key); });
+  } catch (e) {}
+}
+function onRealKey(key) {
+  if (SH && SH.learning) { learnKey(key); return; }
+  const id = codeToButton()[key];
+  if (id) {
+    const n = document.querySelector(`#pad [data-id="${id}"]`);
+    if (n) { n.classList.add('live'); setTimeout(() => n.classList.remove('live'), 600); }
+  } else toast(`Unknown button: ${key}. Tap a button in the pad, then Learn.`);
+}
+async function learnKey(key) {
+  const id = SH.id;
+  try {
+    const r = await api('/api/remote', { id, code: key });
+    if (!r.ok) { toast('Could not save: ' + r.message); return; }
+    await loadRemote();
+    SH.code = key; SH.learning = false; SH.draft = cloneRow(rows[key]);
+    toast(`${REMOTE.buttons[id].title} = ${key}`); renderSheet();
+  } catch (e) { toast(e.message); }
+}
+
+// ---------- the binding sheet ----------
+let SH = null;
+const cloneRow = r => { const c = JSON.parse(JSON.stringify(r || {})); c.tap = c.tap || ''; c.long = c.long || ''; c.hold = c.hold || ''; c.apps = c.apps || []; return c; };
+function openSheet(id) {
+  const b = REMOTE.buttons[id];
+  SH = { id, code: b.code, draft: cloneRow(b.code ? rows[b.code] : null), scope: 'all', slot: 'tap', type: null,
+         learning: false, filter: '', page: 'Abc', suggest: null };
+  $('sheetBg').hidden = false; $('sheet').hidden = false; renderSheet();
+}
+function closeSheet() { SH = null; $('sheetBg').hidden = true; $('sheet').hidden = true; }
+$('sheetBg').onclick = closeSheet;
+const scopeEntry = () => SH.scope === 'all' ? SH.draft : (SH.draft.apps.find(a => a.match === SH.scope) || SH.draft);
+
+const MODS = [['KEY_LEFTMETA', 'Super'], ['KEY_LEFTCTRL', 'Ctrl'], ['KEY_LEFTALT', 'Alt'], ['KEY_LEFTSHIFT', 'Shift']];
+const PRETTY = { KEY_LEFTMETA: 'Super', KEY_LEFTCTRL: 'Ctrl', KEY_LEFTALT: 'Alt', KEY_LEFTSHIFT: 'Shift', KEY_ESC: 'Esc',
+  KEY_ENTER: 'Enter', KEY_BACKSPACE: 'Backspace', KEY_PAGEUP: 'PgUp', KEY_PAGEDOWN: 'PgDn', KEY_PLAYPAUSE: 'Play/Pause',
+  KEY_NEXTSONG: 'Next', KEY_PREVIOUSSONG: 'Previous', KEY_HOMEPAGE: 'Home page' };
+const pretty = c => PRETTY[c] || c.replace(/^KEY_/, '');
+const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c => ['KEY_' + c, c]);
+const KEYPAGES = {
+  Abc: letters,
+  Num: '1234567890'.split('').map(c => ['KEY_' + c, c]),
+  Nav: [['KEY_ESC', 'Esc'], ['KEY_ENTER', 'Enter'], ['KEY_TAB', 'Tab'], ['KEY_SPACE', 'Space'], ['KEY_BACKSPACE', '⌫'],
+        ['KEY_DELETE', 'Del'], ['KEY_INSERT', 'Ins'], ['KEY_HOME', 'Home'], ['KEY_END', 'End'], ['KEY_PAGEUP', 'PgUp'],
+        ['KEY_PAGEDOWN', 'PgDn'], ['KEY_UP', '↑'], ['KEY_DOWN', '↓'], ['KEY_LEFT', '←'], ['KEY_RIGHT', '→']],
+  F: Array.from({ length: 12 }, (_, i) => ['KEY_F' + (i + 1), 'F' + (i + 1)]),
+  Media: [['KEY_PLAYPAUSE', '⏯'], ['KEY_NEXTSONG', '⏭'], ['KEY_PREVIOUSSONG', '⏮'], ['KEY_FASTFORWARD', '⏩'],
+          ['KEY_REWIND', '⏪'], ['KEY_MUTE', '🔇'], ['KEY_VOLUMEUP', '🔊'], ['KEY_VOLUMEDOWN', '🔉'],
+          ['KEY_HOMEPAGE', 'Home pg'], ['KEY_MENU', 'Menu']],
+};
+const URL_PRESETS = [['YouTube', 'https://www.youtube.com/'], ['YouTube TV page', 'https://www.youtube.com/tv'],
+  ['Twitch', 'https://www.twitch.tv/'], ['Netflix', 'https://www.netflix.com/'], ['Prime Video', 'https://www.primevideo.com/']];
+
+function parseCombo(v) {
+  const t = (v || '').split('+').map(x => x.trim()).filter(Boolean);
+  const isMod = x => MODS.some(m => m[0] === x);
+  return { mods: t.filter(isMod), rest: t.filter(x => !isMod(x)) };
+}
+const comboText = (mods, key) => [...MODS.map(m => m[0]).filter(m => mods.includes(m)), ...(key ? [key] : [])].join('+');
+function seg(items, current, onPick) {
+  const s = el('div', { className: 'seg' });
+  items.forEach(([val, label]) => { const b = el('button', { className: val === current ? 'on' : '', textContent: label }); b.onclick = () => onPick(val); s.append(b); });
+  return s;
+}
+
+function renderSheet() {
+  const s = $('sheet'); s.textContent = ''; const b = REMOTE.buttons[SH.id];
+  const close = el('button', { className: 'x', textContent: '×', title: 'Close' }); close.style.fontSize = '26px'; close.onclick = closeSheet;
+  s.append(el('div', { className: 'sheethead' }, el('span', {}, el('b', { textContent: b.title }),
+    el('small', { textContent: SH.code ? '  ' + SH.code : '  code not known yet' })), close));
+  if (SH.learning) {
+    s.append(el('div', { className: 'big', textContent: 'Press this button on the real remote…' }),
+      btn('Cancel', () => { SH.learning = false; renderSheet(); }, true));
+    liveStart(); return;
+  }
+  s.append(btn(SH.code ? 'Re-learn the code of this button' : 'Learn: press this button on the real remote',
+    () => { SH.learning = true; renderSheet(); }, true));
+  if (!SH.code) { s.append(el('div', { className: 'hint', textContent: 'This button has no known code yet. Learn it first, then choose what it does.' })); return; }
+
+  // scope: everywhere, or only while a given app has the focus
+  const sc = el('div', { className: 'seg' });
+  const chip = (label, val) => { const c = el('button', { className: SH.scope === val ? 'on' : '', textContent: label }); c.onclick = () => { SH.scope = val; SH.type = null; renderSheet(); }; return c; };
+  sc.append(chip('Everywhere', 'all'));
+  SH.draft.apps.forEach(a => sc.append(chip(a.match || '(app)', a.match)));
+  const add = el('button', { textContent: '+ only in an app' }); add.onclick = addScope; sc.append(add);
+  s.append(sc);
+  if (SH.suggest) {
+    const sg = el('div', { className: 'seg' });
+    SH.suggest.forEach(name => { const c = el('button', { textContent: name }); c.onclick = () => startScope(name); sg.append(c); });
+    const other = el('button', { textContent: 'other…' }); other.onclick = () => { const n = (prompt('App text (window class, title or process name), e.g. es-de') || '').trim(); if (n) startScope(n); };
+    sg.append(other); s.append(el('div', { className: 'hint', textContent: 'Apps seen recently (press a button on the remote while the app is open to see it here):' }), sg);
+  }
+  if (SH.scope !== 'all') {
+    s.append(btn('Remove the exception for ' + SH.scope, () => { SH.draft.apps = SH.draft.apps.filter(a => a.match !== SH.scope); SH.scope = 'all'; SH.type = null; renderSheet(); }, true));
+  }
+
+  const entry = scopeEntry();
+  s.append(seg([['tap', 'Tap'], ['long', 'Long press']], SH.slot, v => { SH.slot = v; SH.type = null; renderSheet(); }));
+  if (SH.slot === 'long') {
+    const hold = parseFloat(entry.hold || '3') || 3;
+    const step = d => { entry.hold = String(Math.max(0.5, Math.min(10, Math.round((hold + d) * 10) / 10))); renderSheet(); };
+    const dec = el('button', { className: 'alt', textContent: '−' }), inc = el('button', { className: 'alt', textContent: '+' });
+    dec.onclick = () => step(-0.5); inc.onclick = () => step(0.5);
+    s.append(el('div', { className: 'stepper' }, el('span', { className: 'hint', textContent: 'Hold for' }), dec, el('b', { textContent: hold.toFixed(1) + ' s' }), inc));
+  }
+  const val = entry[SH.slot] || '';
+  const type = SH.type || (val ? typeOf(val) : 'none');
+  const setVal = v => { entry[SH.slot] = v; };
+  s.append(seg([['keys', 'Keys'], ['app', 'App'], ['url', 'Website'], ['osk', 'Keyboard'], ['none', 'Nothing']], type, t => {
+    SH.type = t; if (t === 'osk') setVal('osk:toggle'); else if (t === 'none') setVal(''); else if (!val || typeOf(val) !== t) setVal('');
+    renderSheet(); }));
+
+  if (type === 'keys') sheetKeys(s, val, setVal);
+  else if (type === 'app') sheetApps(s, val, setVal);
+  else if (type === 'url') sheetUrl(s, val, setVal);
+  else if (type === 'osk') s.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open the arrows move, OK types, Back closes.' }));
+  else s.append(el('div', { className: 'hint', textContent: SH.slot === 'tap' ? 'This button does nothing on the machine when tapped.' : 'No long-press action.' }));
+
+  const out = el('div', { className: 'msg' });
+  s.append(el('div', { className: 'grid' }, btn('Save', () => saveSheet(out)), btn('Remove all bindings', () => removeBindings(out), true)), out);
+}
+
+async function addScope() {
+  let apps = [];
+  try { const r = await api('/api/monitor?after=' + (Date.now() / 1000 - 300));
+    apps = [...new Set(r.events.map(e => e.app).filter(a => a && a !== 'unknown' && a !== 'none'))].slice(0, 8); } catch (e) {}
+  SH.suggest = apps; renderSheet();
+}
+function startScope(name) {
+  if (!SH.draft.apps.some(a => a.match === name)) SH.draft.apps.push({ match: name, tap: '', long: '', hold: '' });
+  SH.scope = name; SH.suggest = null; SH.type = null; renderSheet();
+}
+
+function sheetKeys(s, val, setVal) {
+  const { mods, rest } = parseCombo(val);
+  if (rest.length > 1) {   // a combination this pad cannot build (more than one non-modifier key)
+    const i = el('input', { value: val, autocomplete: 'off' }); i.oninput = () => setVal(i.value.trim());
+    s.append(el('div', { className: 'hint', textContent: 'A combination with several normal keys: edit it as text.' }), i); return;
+  }
+  const key = rest[0] || '';
+  const set = (m, k) => { setVal(comboText(m, k)); renderSheet(); };
+  s.append(el('div', { className: 'combo', textContent: [...MODS.filter(m => mods.includes(m[0])).map(m => m[1]), ...(key ? [pretty(key)] : [])].join(' + ') || 'tap keys below' }));
+  const mrow = el('div', { className: 'seg' });
+  MODS.forEach(([code, label]) => { const b = el('button', { className: mods.includes(code) ? 'on' : '', textContent: label });
+    b.onclick = () => set(mods.includes(code) ? mods.filter(x => x !== code) : [...mods, code], key); mrow.append(b); });
+  s.append(mrow);
+  s.append(seg(Object.keys(KEYPAGES).map(p => [p, p === 'F' ? 'F1–F12' : p === 'Num' ? '0–9' : p]), SH.page, p => { SH.page = p; renderSheet(); }));
+  const grid = el('div', { className: 'keys' });
+  KEYPAGES[SH.page].forEach(([code, label]) => { const b = el('button', { className: code === key ? 'on' : '', textContent: label });
+    b.onclick = () => set(mods, code === key ? '' : code); grid.append(b); });
+  s.append(grid);
+  s.append(btn('Clear', () => set([], ''), true));
+}
+function sheetApps(s, val, setVal) {
+  const cur = val.startsWith('app:') ? val.slice(4) : '';
+  const f = el('input', { placeholder: 'search apps', value: SH.filter, autocomplete: 'off' });
+  const list = el('div', { className: 'applist' });
+  const draw = () => { list.textContent = '';
+    APPS.filter(a => a.name.toLowerCase().includes(SH.filter.toLowerCase())).forEach(a => {
+      const b = el('button', { className: a.id === cur ? 'on' : '', textContent: (a.id === cur ? '✓ ' : '') + a.name });
+      b.onclick = () => { setVal('app:' + a.id); renderSheet(); }; list.append(b); });
+    if (!list.children.length) list.append(el('div', { className: 'hint', textContent: 'No application matches.' })); };
+  f.oninput = () => { SH.filter = f.value; draw(); };
+  draw(); s.append(f, list);
+  if (cur && !APPS.some(a => a.id === cur)) s.append(el('div', { className: 'hint', textContent: 'Current: ' + cur }));
+}
+function sheetUrl(s, val, setVal) {
+  const cur = val.startsWith('url:') ? val.slice(4) : '';
+  const g = el('div', { className: 'seg' });
+  URL_PRESETS.forEach(([n, u]) => { const b = el('button', { className: u === cur ? 'on' : '', textContent: n }); b.onclick = () => { setVal('url:' + u); renderSheet(); }; g.append(b); });
+  const i = el('input', { type: 'url', placeholder: 'https://…', value: cur, autocomplete: 'off', inputMode: 'url' });
+  i.oninput = () => setVal(i.value.trim() ? 'url:' + i.value.trim() : '');
+  s.append(g, i);
+}
+
+async function saveSheet(out) {
+  const d = SH.draft;
+  const clean = { tap: d.tap || '', long: d.long || '', hold: d.hold || '', apps: (d.apps || []).filter(a => a.match && (a.tap || a.long)) };
+  if (!clean.tap && !clean.long && !clean.apps.length) delete rows[SH.code]; else rows[SH.code] = clean;
+  out.textContent = 'Saving…'; out.className = 'msg';
+  try {
+    const r = await api('/api/keymap', { keys: rowsToPayload(rows) });
+    if (r.ok) { toast('Saved'); closeSheet(); renderRows(); return; }
+    out.textContent = 'Failed: ' + r.message; out.className = 'msg warn'; await loadMap();
+  } catch (e) { out.textContent = e.message; out.className = 'msg warn'; }
+}
+async function removeBindings(out) {
+  if (!confirm('Remove every binding of this button?')) return;
+  delete rows[SH.code];
+  try { const r = await api('/api/keymap', { keys: rowsToPayload(rows) });
+    if (r.ok) { toast('Removed'); closeSheet(); renderRows(); return; }
+    out.textContent = 'Failed: ' + r.message; out.className = 'msg warn'; await loadMap();
+  } catch (e) { out.textContent = e.message; out.className = 'msg warn'; }
+}
+
 wizRender();
 
 loadApps(); refresh(); setInterval(refresh, 3000);
 loadMap(); pollRecent(); setInterval(pollRecent, 2500);
+loadRemote();
+let startTab = 'remote'; try { startTab = localStorage.getItem('cecTab') || 'remote'; } catch (e) {}
+showTab(['remote', 'setup', 'monitor', 'settings'].includes(startTab) ? startTab : 'remote');
 </script>
 </body>
 </html>

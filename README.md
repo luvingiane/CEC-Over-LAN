@@ -61,6 +61,19 @@ cat ~/cec-over-lan/token          # access token, created on first start (mode 0
 
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 
+### The web UI on a phone
+
+The page has four tabs (bottom bar) and a status strip on top (receiver, TV link, machine on screen, DRY RUN):
+
+- **Remote** — a drawing of the remote (layout from `receiver/web/remote.json`, taken from a photo of the Xiaomi remote). Tap a button to open the binding sheet; press a button on the real remote and it lights up. Buttons with a ring have a binding, dashed ones have a code that is not known yet, a tilde marks a guessed code. The old list editor is still there under *All bindings*.
+- **Setup** — pairing, connection and the setup wizard.
+- **Monitor** — the live key monitor.
+- **Settings** — status details, dry run, mouse pointer, receiver service.
+
+**The binding sheet needs no typing.** It sets, per button: *Tap* or *Long press* (with a hold-time stepper), and an action chosen with taps: **Keys** (modifier toggles Super/Ctrl/Alt/Shift plus pages of keys: letters, digits, navigation, F1–F12, media), **App** (search the installed applications), **Website** (presets or a URL), **Keyboard** (the on-screen keyboard) or *Nothing*. A scope row switches between *Everywhere* and *only in an app* (the apps seen recently are offered, see Per-app exceptions). **Learn** associates a drawn button with the code of the real one: press it on the remote and the code is saved in `~/cec-over-lan/remote-learned.json` (a code belongs to one button). A website address is the only thing that may need typing.
+
+The codes in `remote.json` come from this project's logs and tests; the ones marked `guess` (digits other than 0 and 8, TTX, power) were deduced and may need Learn, and the buttons with `null` (INFO, EPG, AUDIO, source, mic, Netflix, Prime Video, YouTube, TV+, star, Live TV, settings, mute) were never observed.
+
 ### Dry run
 
 The *Dry run* card has a switch: while it is on (a file `~/cec-over-lan/dry-run` exists; the receiver checks it twice a second, no restart), pressing a remote button presses **nothing** and launches **nothing** on the machine. The receiver only logs what it would do, and the card lists it ("would press KEY_ENTER", "would launch app kodi.desktop"); real launches are listed as "LAUNCHED". A key that is already held down when you switch it on is still released, so nothing can stay stuck. `--dry-run` on the command line is the permanent version.

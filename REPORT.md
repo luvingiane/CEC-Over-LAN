@@ -30,6 +30,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T23 Key names people type (Super+S) | Fixed and tested; effect of the shortcut to be confirmed |
 | T24 Dock popping up on remote presses | Fixed in code and tested; to be confirmed on the TV |
 | T25 On-screen keyboard full width, flush bottom | OK (pending the owner's look on the TV) |
+| T26 Phone UI: tabs, drawn remote, binding sheet | OK (pending the owner's use on the phone) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -230,6 +231,15 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 **Provenance question from the owner:** the keyboard (model, tables, GTK window, receiver link) was written from scratch in this project; no third-party keyboard code was copied or adapted and nothing was downloaded for it; it depends on GTK 3 (PyGObject) and `python-evdev` as libraries. The Italian punctuation table comes from the author's knowledge of the xkb `it` layout and is unverified.
 **Not changed:** a TV with overscan can still hide the last pixels at the edges; that is a TV setting.
 **Outcome:** OK, pending the owner's look on the TV.
+
+## T26 — Phone UI: tabs, a drawn remote and a binding sheet without typing
+**Request:** the page had become one very long menu and typing on a phone is awkward; a keyboard/pad UI for the bindings was asked for, with a photo of the remote.
+**Done:** (1) four tabs with a bottom bar and a status strip (Remote, Setup, Monitor, Settings); the existing cards were moved, not rewritten. (2) a drawn remote built from `receiver/web/remote.json` (41 buttons laid out like the photo: numbers, INFO/TTX/EPG/AUDIO/source, six app buttons, the D-pad ring with OK, settings/back/home, volume and channel rockers with EXIT/MUTE, and R/G/Y/B); a button lights up when pressed on the real remote. (3) a binding sheet per button: tap or long press (with a hold stepper), action by taps (key picker with modifier toggles and pages, app search list, website presets, on-screen keyboard, nothing), a scope row for per-app exceptions, Save and Remove. (4) **Learn**: the code of a drawn button is learned from a real press and stored in `remote-learned.json`; new endpoint `/api/remote` (GET the model, POST learn or reset).
+**DONE (tests):** 68 offline tests pass; the new ones check that the model is consistent (no two buttons share a code, every code is a valid key name), that the codes agree with what the logs showed (R/G/Y/B = STOPCD/EJECTCD/SHUFFLE/SEARCH, EXIT = KEY_EXIT, unknown ones are `null`, never invented), and that learning, resetting, moving a code to another button and rejecting bad input work.
+**DONE (browser, 375x812, simulated key presses):** the pad shows 41 buttons, 5 with a binding, 13 unknown and 10 guessed; the sheet for Back shows its current action and the `es-de` exception; `Super` + `S` tapped for the red button was saved as `KEY_LEFTMETA+KEY_S` without touching the other entries (including the Back exception); Learn on INFO took the next real press (`KEY_INFO`), updated the pad and the sheet and wrote `remote-learned.json` (mode 0600); all four tabs render, the wizard still starts, the live feed stops when the Remote tab is left; no console errors. Two defects found there and fixed: the header wrapped on two lines (the status pills are now short) and the keypad page `123` was listed before `Abc`.
+**DONE (on the machine):** files deployed, the web service restarted alone (the receiver was not touched), the model loads there (41 buttons).
+**Not verified:** the layout on a real phone (only a 375x812 emulation), Learn with the real remote, the guessed and unknown codes (`guess`/`null` in `remote.json`).
+**Outcome:** OK, pending the owner's use on the phone.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

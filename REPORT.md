@@ -28,6 +28,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T21 On-screen keyboard | PARTIAL (typing not tried yet) |
 | T22 Restart without closing launched apps | OK |
 | T23 Key names people type (Super+S) | Fixed and tested; effect of the shortcut to be confirmed |
+| T24 Dock popping up on remote presses | Fixed in code and tested; to be confirmed on the TV |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -210,6 +211,15 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 **DONE (on the machine):** the web service (restarted alone, so the launched applications stayed open) accepts `KEY_META+KEY_S`, `Super+S` and `Ctrl+Alt+Tab`.
 **Inconclusive:** whether an injected `Super+S` opens the quick settings menu. I injected it (held 150 ms and instantly) from a test virtual keyboard and compared the focused window, but the quick settings menu does not change `focus_window`, so the measurement cannot tell. The events are injected without error; whether the menu opens was not observed (I cannot see the TV). A possible cause to rule out: the focused application (YouTube TV) may inhibit compositor shortcuts.
 **Outcome:** the name problem is fixed and tested; the effect of the shortcut is to be confirmed by the owner.
+
+## T24 — "When I press Esc the dock must go away"
+**DONE (read on the machine):** the dock is at the bottom, auto-hide on, `extend-height = true` (full width), `require-pressure-to-show = true`; dash-to-dock reveals the dock when the pointer pushes against the bottom edge (`docking.js:1102-1106`, a pressure barrier) and keeps it while the pointer hovers it (`_hoverChanged`).
+**Cause (my own feature, T17):** the pointer hider parked the cursor in the **bottom-right** corner, i.e. pushed it against that edge on every remote press (Back/Esc included): the dock appeared and, with the cursor still over it, never hid. This is the most likely explanation of the report; it was not observed on the TV.
+**Done:** the default parking corner is now **top-right** (`--pointer-corner` to change it), away from the dock and from GNOME's hot corner (top-left).
+**DONE (tests):** 61 offline tests pass, including that the default corner moves right and **up** (not down) and that each of the four corners moves the right way.
+**DONE (on the machine):** receiver restarted with `KillMode=process` for that restart only (temporary drop-in removed, `KillMode=control-group` again); YouTube TV stayed open (ES-DE had been closed by the owner before the restart).
+**Second case, not changed:** after `Ctrl+Alt+Tab` the dock gets the keyboard focus (`_onAccessibilityFocus` unsets the window focus and shows the dock) and dash-to-dock has no `Escape` handling at all, so `Esc` alone does not return the focus. If that is what the owner means, it needs a separate fix (for example sending a key that returns the focus to a window after `Esc`).
+**Outcome:** fixed in code and tested; to be confirmed on the TV.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

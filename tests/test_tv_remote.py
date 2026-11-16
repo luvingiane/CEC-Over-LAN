@@ -260,12 +260,26 @@ class PointerTests(unittest.TestCase):
         self.ui = FakePointerUI()
         self.pointer = core.Pointer(self.out, self.keep, self.ui)
 
-    def test_moves_the_pointer_to_the_bottom_right_corner(self):
-        self.assertEqual(self.pointer.hide(), "moved")
+    def moves(self, pointer):
+        pointer.last = -99.0
+        self.ui.events.clear()
+        self.assertEqual(pointer.hide(), "moved")
         rel = [ev for ev in self.ui.events if ev != "syn"]
         self.assertTrue(rel and all(t == core.e.EV_REL for t, _, _ in rel))
-        self.assertTrue(all(v > 0 for _, _, v in rel))   # positive X and Y = right and down
-        self.assertEqual({c for _, c, _ in rel}, {core.e.REL_X, core.e.REL_Y})
+        x = {v > 0 for _, c, v in rel if c == core.e.REL_X}
+        y = {v > 0 for _, c, v in rel if c == core.e.REL_Y}
+        self.assertEqual((len(x), len(y)), (1, 1))        # every move goes the same way on each axis
+        return x.pop(), y.pop()                           # (right?, down?)
+
+    def test_default_corner_is_top_right_not_the_bottom_edge(self):
+        # a bottom dock with auto-hide is revealed by pushing against the bottom edge
+        self.assertEqual(self.moves(self.pointer), (True, False))
+
+    def test_every_corner_goes_the_right_way(self):
+        for corner, expected in (("top-right", (True, False)), ("bottom-right", (True, True)),
+                                 ("top-left", (False, False)), ("bottom-left", (False, True))):
+            p = core.Pointer(self.out, self.keep, self.ui, corner)
+            self.assertEqual(self.moves(p), expected, corner)
 
     def test_throttled(self):
         self.assertEqual(self.pointer.hide(), "moved")

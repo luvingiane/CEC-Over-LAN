@@ -446,14 +446,22 @@ def make_pointer_device():
         return None
 
 
+CORNERS = {"top-right": (1, -1), "bottom-right": (1, 1), "top-left": (-1, -1), "bottom-left": (-1, 1)}
+
+
 class Pointer:
-    """Hides the mouse pointer by moving it to the bottom-right corner, where the cursor
-    image hangs off the screen. Does nothing in dry run or when the owner wants the pointer."""
+    """Hides the mouse pointer by moving it to a screen corner, where most of the cursor image
+    hangs off the screen. Does nothing in dry run or when the owner wants the pointer.
+
+    The corner matters: a bottom dock with auto-hide (dash-to-dock) reveals itself when the
+    pointer pushes against the bottom edge and then never hides while the pointer is over it,
+    and GNOME's hot corner is the top-left. So the default is the top-right corner."""
 
     STEP, REPEAT, MIN_GAP_S = 5000, 5, 0.4
 
-    def __init__(self, out, keep_flag, ui):
+    def __init__(self, out, keep_flag, ui, corner="top-right"):
         self.out, self.keep, self.ui = out, keep_flag, ui
+        self.sx, self.sy = CORNERS[corner]
         self.last = -99.0
 
     def hide(self):
@@ -467,8 +475,8 @@ class Pointer:
             return "skipped"
         self.last = now
         for _ in range(self.REPEAT):
-            self.ui.write(e.EV_REL, e.REL_X, self.STEP)
-            self.ui.write(e.EV_REL, e.REL_Y, self.STEP)
+            self.ui.write(e.EV_REL, e.REL_X, self.sx * self.STEP)
+            self.ui.write(e.EV_REL, e.REL_Y, self.sy * self.STEP)
             self.ui.syn()
         return "moved"
 
@@ -772,7 +780,7 @@ def run(args):
     pointer = None
     if not args.no_hide_pointer:
         pointer = Pointer(out, KeepPointerFlag(args.pointer_file),
-                          None if args.dry_run else make_pointer_device())
+                          None if args.dry_run else make_pointer_device(), args.pointer_corner)
     router = Router(keymap, out, pointer=pointer, focus=Focus(), osk=OskController())
     gate = Gate(args, router)
     current = {"proc": None}
@@ -829,6 +837,9 @@ if __name__ == "__main__":
     p.add_argument("--keymap", default=str(KEYMAP_FILE), help="path of keymap.json")
     p.add_argument("--no-hide-pointer", action="store_true",
                    help="never move the mouse pointer out of the way on remote presses")
+    p.add_argument("--pointer-corner", default="top-right", choices=sorted(CORNERS),
+                   help="where the mouse pointer is parked (default top-right: a bottom dock reveals "
+                        "itself when the pointer pushes against the bottom edge)")
     p.add_argument("--pointer-file", default=str(POINTER_FILE),
                    help="while this file exists the mouse pointer is left alone")
     p.add_argument("--dryrun-file", default=str(DRYRUN_FILE),

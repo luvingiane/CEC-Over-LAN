@@ -94,7 +94,9 @@ The wizard has a *GNOME shell and dock* list with the shortcuts read from the te
 
 ### Mouse pointer
 
-On a machine that is shown on a TV the mouse pointer is just in the way. When a remote button is pressed (and the machine is on the TV screen, not in dry run) the receiver moves the pointer to the bottom-right corner, where the cursor image hangs off the screen, using a second virtual mouse ("TV Remote pointer mover"). If you move a real mouse afterwards the pointer starts again from that corner. It is on by default; the *Mouse pointer* card in the web UI switches it off (a file `~/cec-over-lan/pointer-visible` exists while it is off), `--no-hide-pointer` disables it permanently. It needs no desktop extension and no session restart.
+On a machine that is shown on a TV the mouse pointer is just in the way. When a remote button is pressed (and the machine is on the TV screen, not in dry run) the receiver moves the pointer to the **top-right** corner, where most of the cursor image hangs off the screen, using a second virtual mouse ("TV Remote pointer mover"). If you move a real mouse afterwards the pointer starts again from that corner.
+
+The corner matters. The first version parked the pointer at the bottom-right, and with a bottom dock that auto-hides (dash-to-dock, `extend-height`, `require-pressure-to-show`) every remote press pushed the pointer against the bottom edge, which reveals the dock, and the pointer then stayed over it so it never hid again. Top-right is clear of that and of GNOME's hot corner (top-left). `--pointer-corner top-right|bottom-right|top-left|bottom-left` changes it. It is on by default; the *Mouse pointer* card in the web UI switches it off (a file `~/cec-over-lan/pointer-visible` exists while it is off), `--no-hide-pointer` disables it permanently. It needs no desktop extension and no session restart.
 
 ### Key monitor
 

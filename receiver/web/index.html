@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CEC-Over-LAN</title>
 <style>
   :root { --bg:#f4f5f7; --card:#fff; --fg:#1b1d21; --muted:#6a707c; --line:#d9dce2;
@@ -62,7 +62,7 @@
   .radio { display:flex; gap:10px; align-items:flex-start; margin:8px 0; font-size:14px; }
   .radio input { width:auto; margin-top:4px; }
 
-  body { padding-bottom: 84px; }
+  body { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   header.top { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line);
                padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .brand { font-size:16px; white-space:nowrap; }
@@ -71,12 +71,12 @@
           color:var(--muted); background:var(--card); cursor:pointer; }
   .pill.ok { color:var(--ok); } .pill.bad { color:var(--bad); } .pill.dry { color:#d98b00; border-color:#d98b00; }
   .tab { display:none; } .tab.on { display:block; }
-  nav.bar { position:fixed; left:0; right:0; bottom:0; z-index:6; display:grid; grid-template-columns:repeat(4,1fr);
+  nav.navbar { position:fixed; left:0; right:0; bottom:0; z-index:6; display:grid; grid-template-columns:repeat(4,1fr);
             background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
-  nav.bar button { margin:0; border-radius:0; background:transparent; color:var(--muted); font-size:12px;
+  nav.navbar button { margin:0; border-radius:0; background:transparent; color:var(--muted); font-size:12px;
                    padding:8px 0 10px; display:flex; flex-direction:column; align-items:center; gap:2px; font-weight:600; }
-  nav.bar button span { font-size:20px; line-height:1; }
-  nav.bar button.on { color:var(--accent); }
+  nav.navbar button span { font-size:20px; line-height:1; }
+  nav.navbar button.on { color:var(--accent); }
   details.card > summary { cursor:pointer; font-size:15px; font-weight:600; }
   details.card[open] > summary { margin-bottom:10px; }
 
@@ -263,7 +263,7 @@
 </section>
 </main>
 
-<nav class="bar" id="bar">
+<nav class="navbar" id="bar">
   <button data-tab="remote" class="on"><span>🎛</span>Remote</button>
   <button data-tab="setup"><span>🔌</span>Setup</button>
   <button data-tab="monitor"><span>📡</span>Monitor</button>

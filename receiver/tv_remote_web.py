@@ -108,7 +108,8 @@ def status(_q=None):
     would = [ln for ln in log.splitlines()
              if (ln.startswith("[dry-run] ") or ln.startswith("[launch] ")) and "mode" not in ln]
     return {"target": target, "service": active, "link": link, "on_screen": on_screen,
-            "dry_run": core.DRYRUN_FILE.exists(), "would": would[-10:]}
+            "dry_run": core.DRYRUN_FILE.exists(), "would": would[-10:],
+            "hide_pointer": not core.POINTER_FILE.exists()}
 
 
 def discover(_q=None):
@@ -359,6 +360,22 @@ def do_dryrun(data):
     return {"ok": True, "message": "dry run " + ("ON: nothing is applied" if on else "OFF: keys are applied")}
 
 
+def do_pointer(data):
+    """hide=True: the mouse pointer is moved out of the way on remote presses (default)."""
+    hide = data.get("hide")
+    if not isinstance(hide, bool):
+        return {"ok": False, "message": "invalid value"}
+    try:
+        if hide:
+            core.POINTER_FILE.unlink(missing_ok=True)
+        else:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            core.POINTER_FILE.touch()
+    except OSError as exc:
+        return {"ok": False, "message": str(exc)}
+    return {"ok": True, "message": "mouse pointer will be " + ("hidden on remote presses" if hide else "left alone")}
+
+
 def do_keymap_reset(_data):
     try:
         KEYMAP_FILE.unlink()
@@ -380,7 +397,8 @@ def recent(_q=None):
 
 
 POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service,
-        "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset, "/api/dryrun": do_dryrun}
+        "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset, "/api/dryrun": do_dryrun,
+        "/api/pointer": do_pointer}
 GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
        "/api/recent": recent, "/api/apps": list_apps, "/api/events": events,
        "/api/profiles": profiles, "/api/monitor": monitor}

@@ -32,6 +32,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -47,6 +48,7 @@ URL_RE = re.compile(r"^https?://[^\s\x00-\x1f\x7f]{1,2000}$")
 STATE_DIR = Path(os.environ.get("CEC_STATE_DIR", Path.home() / "cec-over-lan"))
 KEYMAP_FILE = STATE_DIR / "keymap.json"
 DRYRUN_FILE = STATE_DIR / "dry-run"
+POINTER_FILE = STATE_DIR / "pointer-visible"
 APP_DIRS = [Path("/usr/share/applications"), Path("/usr/local/share/applications"),
             Path.home() / ".local/share/applications",
             Path("/var/lib/flatpak/exports/share/applications"),
@@ -144,6 +146,17 @@ def session_env():
     return _SESSION_ENV
 
 
+def scope_cmd(cmd):
+    """Run a launched program in its own systemd scope. Without this it would live inside the
+    receiver's cgroup: restarting the receiver would close the app, and the app's memory and
+    CPU would be counted as the receiver's."""
+    runner = shutil.which("systemd-run")
+    if runner is None:
+        return cmd
+    return [runner, "--user", "--scope", "--quiet", "--collect",
+            "--description=CEC-Over-LAN launch"] + cmd
+
+
 def launch(action, dry_run=False):
     """Start an installed application or open a URL. No shell, no free-form command."""
     if action["type"] == "app":
@@ -158,7 +171,7 @@ def launch(action, dry_run=False):
     if dry_run:
         return
     try:
-        proc = subprocess.Popen(cmd, env=session_env(), start_new_session=True,
+        proc = subprocess.Popen(scope_cmd(cmd), env=session_env(), start_new_session=True,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
         threading.Thread(target=proc.wait, daemon=True).start()  # reap, no zombies
@@ -271,11 +284,13 @@ def key_codes():
     return sorted(codes)
 
 
-class DryFlag:
-    """Runtime dry-run switch: it is ON while the flag file exists (the web UI creates/removes it)."""
+class FileFlag:
+    """A runtime switch: it is ON while a flag file exists (the web UI creates/removes it).
+    The file is re-checked at most every 0.5 s; a change is logged once."""
 
-    def __init__(self, path):
+    def __init__(self, path, on_msg, off_msg):
         self.path = Path(path)
+        self.on_msg, self.off_msg = on_msg, off_msg
         self._on = False
         self._last = None
         self._checked = -99.0
@@ -288,9 +303,19 @@ class DryFlag:
             self._on = self.path.exists()
             if self._on != self._last:
                 self._last = self._on
-                print("[dry-run mode] ON: remote keys are only logged, nothing is applied"
-                      if self._on else "[dry-run mode] OFF: remote keys are applied", flush=True)
+                print(self.on_msg if self._on else self.off_msg, flush=True)
         return self._on
+
+
+def DryFlag(path):
+    return FileFlag(path, "[dry-run mode] ON: remote keys are only logged, nothing is applied",
+                    "[dry-run mode] OFF: remote keys are applied")
+
+
+def KeepPointerFlag(path):
+    """ON = the owner wants the mouse pointer left alone (it is hidden by default)."""
+    return FileFlag(path, "[pointer] ON: the mouse pointer is left where it is",
+                    "[pointer] OFF: the mouse pointer is moved out of the way on remote presses")
 
 
 class Out:
@@ -318,12 +343,53 @@ class Out:
             self.ui.syn()
 
 
+def make_pointer_device():
+    """A virtual mouse used only to push the pointer out of the way; None if it cannot be made."""
+    if UInput is None:
+        return None
+    try:
+        return UInput({e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE],
+                       e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL]},
+                      name="TV Remote pointer mover (CEC-Over-LAN)")
+    except OSError as exc:
+        print(f"[pointer] cannot create the virtual mouse: {exc}", flush=True)
+        return None
+
+
+class Pointer:
+    """Hides the mouse pointer by moving it to the bottom-right corner, where the cursor
+    image hangs off the screen. Does nothing in dry run or when the owner wants the pointer."""
+
+    STEP, REPEAT, MIN_GAP_S = 5000, 5, 0.4
+
+    def __init__(self, out, keep_flag, ui):
+        self.out, self.keep, self.ui = out, keep_flag, ui
+        self.last = -99.0
+
+    def hide(self):
+        """Returns what happened: moved | dry | kept | skipped."""
+        if self.keep.on:
+            return "kept"
+        if self.out.is_dry():
+            return "dry"
+        now = time.monotonic()
+        if self.ui is None or now - self.last < self.MIN_GAP_S:
+            return "skipped"
+        self.last = now
+        for _ in range(self.REPEAT):
+            self.ui.write(e.EV_REL, e.REL_X, self.STEP)
+            self.ui.write(e.EV_REL, e.REL_Y, self.STEP)
+            self.ui.syn()
+        return "moved"
+
+
 class Router:
     """Turns remote key events into injected keys / launches following the keymap."""
 
-    def __init__(self, keymap, out, launcher=None):
+    def __init__(self, keymap, out, launcher=None, pointer=None):
         self.keymap = keymap
         self.out = out
+        self.pointer = pointer
         self.launcher = launcher or (lambda action: launch(action, out.is_dry()))
         self.lock = threading.RLock()
         self.holds = {}   # remote key -> injected names currently held down
@@ -370,6 +436,8 @@ class Router:
                 decision = self._down(key) if active else "off-screen"
                 dry = "yes" if getattr(self.out, "is_dry", lambda: False)() else "no"
                 detail = f"decision={decision} dry={dry}"
+                if active and self.pointer is not None:
+                    detail += f" pointer={self.pointer.hide()}"
             print(f"[seen] {key} {state} screen={'yes' if active else 'no'} {detail}", flush=True)
 
     def _down(self, key):
@@ -475,7 +543,11 @@ class Gate:
 def run(args):
     keymap = Keymap(args.keymap, args.back_key)
     out = Out(args.dry_run, DryFlag(args.dryrun_file))
-    router = Router(keymap, out)
+    pointer = None
+    if not args.no_hide_pointer:
+        pointer = Pointer(out, KeepPointerFlag(args.pointer_file),
+                          None if args.dry_run else make_pointer_device())
+    router = Router(keymap, out, pointer=pointer)
     gate = Gate(args, router)
     current = {"proc": None}
 
@@ -529,6 +601,10 @@ if __name__ == "__main__":
     p.add_argument("--target", required=True, help="IP:port of the wireless debugging connection")
     p.add_argument("--dry-run", action="store_true", help="print what would be injected/launched")
     p.add_argument("--keymap", default=str(KEYMAP_FILE), help="path of keymap.json")
+    p.add_argument("--no-hide-pointer", action="store_true",
+                   help="never move the mouse pointer out of the way on remote presses")
+    p.add_argument("--pointer-file", default=str(POINTER_FILE),
+                   help="while this file exists the mouse pointer is left alone")
     p.add_argument("--dryrun-file", default=str(DRYRUN_FILE),
                    help="while this file exists nothing is pressed or launched, only logged")
     p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"],

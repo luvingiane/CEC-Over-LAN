@@ -65,6 +65,10 @@ Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers
 
 The *Dry run* card has a switch: while it is on (a file `~/cec-over-lan/dry-run` exists; the receiver checks it twice a second, no restart), pressing a remote button presses **nothing** and launches **nothing** on the machine. The receiver only logs what it would do, and the card lists it ("would press KEY_ENTER", "would launch app kodi.desktop"); real launches are listed as "LAUNCHED". A key that is already held down when you switch it on is still released, so nothing can stay stuck. `--dry-run` on the command line is the permanent version.
 
+### Mouse pointer
+
+On a machine that is shown on a TV the mouse pointer is just in the way. When a remote button is pressed (and the machine is on the TV screen, not in dry run) the receiver moves the pointer to the bottom-right corner, where the cursor image hangs off the screen, using a second virtual mouse ("TV Remote pointer mover"). If you move a real mouse afterwards the pointer starts again from that corner. It is on by default; the *Mouse pointer* card in the web UI switches it off (a file `~/cec-over-lan/pointer-visible` exists while it is off), `--no-hide-pointer` disables it permanently. It needs no desktop extension and no session restart.
+
 ### Key monitor
 
 The *Key monitor* card (press *Start monitor*) shows every remote button the receiver gets, as it happens: the button in big letters, whether the machine was **on screen or off screen** when it was pressed, what the receiver decided to do with it (applied, only a dry run, ignored because off-screen, unmapped, waiting for a long press) and, on release, how long it was held and what happened. Rows pressed off-screen are red and can be filtered. It is meant for analysis: the receiver reads the remote below Android's UI, so it sees buttons even when the TV is showing something else; those are never applied (`decision=off-screen`).
@@ -99,7 +103,7 @@ The *Key mapping* card edits `~/cec-over-lan/keymap.json`, which the receiver re
   - keys, or a combo joined with `+`, e.g. `KEY_LEFTCTRL+KEY_C`;
   - `app:<file>.desktop`: launch an installed application (`gio launch`), chosen from the list of installed `.desktop` files;
   - `url:https://…`: open a web page with the default browser (`xdg-open`). Only `http://` and `https://` are accepted.
-  Launches happen once per press (repeats within 1.5 s are ignored) and, like keys, only while the machine is on the TV screen. Free-form commands are not accepted on purpose.
+  Launches happen once per press (repeats within 1.5 s are ignored) and, like keys, only while the machine is on the TV screen. Free-form commands are not accepted on purpose. Each launched program is started in its own systemd scope (`systemd-run --user --scope`), so restarting the receiver does not close it and its memory is not counted as the receiver's.
 - **Long press** fires once after the **hold** time (0.3–10 s, default 3). With only a long action, a short press does nothing; with both, a short press clicks the tap action and a long one fires the long action only.
 - Any `KEY_*` name known to Linux evdev can be a target (518 on the test machine). Power actions (`KEY_POWER`, `KEY_SLEEP`, `KEY_SUSPEND`, `KEY_RESTART`, `KEY_WAKEUP`) are refused on purpose.
 - *Reset to defaults* deletes the file; the built-in mapping above applies again.

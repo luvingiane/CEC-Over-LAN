@@ -84,6 +84,14 @@
     <div class="hint" id="dryList">—</div>
   </div>
 
+  <div class="card">
+    <h2>Mouse pointer</h2>
+    <label class="radio"><input type="checkbox" id="ptrCb">
+      <span><b>Hide the mouse pointer</b> when a remote button is pressed (it is moved to the bottom-right corner, out of the way).
+        If you move the mouse afterwards, the pointer starts again from that corner.</span></label>
+    <div class="msg" id="mPtr"></div>
+  </div>
+
   <div class="card" id="monCard">
     <h2>Key monitor</h2>
     <div class="hint">Shows every button the receiver gets, <b>also when the machine is not on the TV screen</b>
@@ -190,6 +198,7 @@ async function refresh() {
     setClass($('sLink'), s.link, s.link === 'device');
     setClass($('sScreen'), s.on_screen, s.on_screen === 'yes');
     $('sTarget').textContent = s.target || 'not set';
+    if (document.activeElement !== $('ptrCb')) $('ptrCb').checked = !!s.hide_pointer;
     if (document.activeElement !== $('dryCb')) $('dryCb').checked = !!s.dry_run;
     $('mDry').textContent = s.dry_run ? 'Dry run is ON: buttons do nothing on the machine.' : 'Dry run is OFF: buttons are applied for real.';
     $('mDry').className = 'msg ' + (s.dry_run ? 'good' : 'warn');
@@ -207,6 +216,13 @@ async function refresh() {
     }
   } catch (e) { $('sService').textContent = e.message; }
 }
+$('ptrCb').onchange = async () => {
+  const want = $('ptrCb').checked;
+  try { const r = await api('/api/pointer', { hide: want });
+        $('mPtr').textContent = r.message || ''; $('mPtr').className = 'msg ' + (r.ok ? 'good' : 'warn');
+        if (!r.ok) $('ptrCb').checked = !want; } catch (e) { $('ptrCb').checked = !want; }
+  refresh();
+};
 $('dryCb').onchange = async () => {
   const want = $('dryCb').checked;
   try { const r = await api('/api/dryrun', { on: want }); if (!r.ok) { $('dryCb').checked = !want; } } catch (e) { $('dryCb').checked = !want; }

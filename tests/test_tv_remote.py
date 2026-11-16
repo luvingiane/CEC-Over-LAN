@@ -239,6 +239,77 @@ class LogFormat(unittest.TestCase):
             del os.environ["CEC_EVENTS_FILE"]
 
 
+class FakePointerUI:
+    def __init__(self):
+        self.events = []
+
+    def write(self, etype, code, value):
+        self.events.append((etype, code, value))
+
+    def syn(self):
+        self.events.append("syn")
+
+
+@unittest.skipIf(core.e is None, "python-evdev not installed")
+class PointerTests(unittest.TestCase):
+    def setUp(self):
+        d = Path(tempfile.mkdtemp())
+        self.keep_path, self.dry_path = d / "pointer-visible", d / "dry-run"
+        self.keep = core.KeepPointerFlag(self.keep_path)
+        self.out = bare_out(core.DryFlag(self.dry_path))
+        self.ui = FakePointerUI()
+        self.pointer = core.Pointer(self.out, self.keep, self.ui)
+
+    def test_moves_the_pointer_to_the_bottom_right_corner(self):
+        self.assertEqual(self.pointer.hide(), "moved")
+        rel = [ev for ev in self.ui.events if ev != "syn"]
+        self.assertTrue(rel and all(t == core.e.EV_REL for t, _, _ in rel))
+        self.assertTrue(all(v > 0 for _, _, v in rel))   # positive X and Y = right and down
+        self.assertEqual({c for _, c, _ in rel}, {core.e.REL_X, core.e.REL_Y})
+
+    def test_throttled(self):
+        self.assertEqual(self.pointer.hide(), "moved")
+        n = len(self.ui.events)
+        self.assertEqual(self.pointer.hide(), "skipped")
+        self.assertEqual(len(self.ui.events), n)
+
+    def test_left_alone_when_the_owner_wants_it(self):
+        self.keep_path.touch()
+        time.sleep(0.6)
+        self.assertEqual(self.pointer.hide(), "kept")
+        self.assertEqual(self.ui.events, [])
+
+    def test_nothing_in_dry_run(self):
+        self.dry_path.touch()
+        time.sleep(0.6)
+        self.assertEqual(self.pointer.hide(), "dry")
+        self.assertEqual(self.ui.events, [])
+
+    def test_no_device_means_skipped(self):
+        self.assertEqual(core.Pointer(self.out, self.keep, None).hide(), "skipped")
+
+
+class RouterPointer(unittest.TestCase):
+    class Spy:
+        def __init__(self):
+            self.calls = 0
+
+        def hide(self):
+            self.calls += 1
+            return "moved"
+
+    def test_pointer_only_on_press_and_only_on_screen(self):
+        router, _, _ = make_router({"KEY_SELECT": {"tap": "KEY_ENTER"}})
+        router.pointer = self.Spy()
+        lines = seen_lines(router, ("KEY_SELECT", "DOWN", True), ("KEY_SELECT", "UP", True),
+                           ("KEY_SELECT", "DOWN", False), ("KEY_X", "DOWN", True))
+        self.assertIn("pointer=moved", lines[0])
+        self.assertNotIn("pointer=", lines[1])      # release
+        self.assertNotIn("pointer=", lines[2])      # machine not on screen
+        self.assertIn("pointer=moved", lines[3])    # unmapped keys hide it too
+        self.assertEqual(router.pointer.calls, 2)
+
+
 class Actions(unittest.TestCase):
     def test_parse_action_kinds(self):
         self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})
@@ -253,6 +324,14 @@ class Actions(unittest.TestCase):
                     "app:kodi", "app:a b.desktop", "app:$(id).desktop", "app:", "url:", "ls -la",
                     "KEY_A;reboot"):
             self.assertIsNone(core.parse_action(bad), bad)
+
+    def test_launched_programs_get_their_own_scope(self):
+        cmd = core.scope_cmd(["gio", "launch", "/usr/share/applications/x.desktop"])
+        self.assertEqual(cmd[-3:], ["gio", "launch", "/usr/share/applications/x.desktop"])
+        if len(cmd) > 3:   # systemd-run is installed
+            self.assertTrue(cmd[0].endswith("systemd-run"))
+            self.assertIn("--scope", cmd)
+            self.assertIn("--user", cmd)
 
     def test_desktop_path_rejects_traversal(self):
         self.assertIsNone(core.desktop_path("../../etc/passwd"))

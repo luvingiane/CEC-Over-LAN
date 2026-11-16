@@ -21,6 +21,8 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T14 Setup wizard and launch actions | OK (pending the owner's check with the real remote) |
 | T15 Dry-run switch | OK (pending the owner's test with the real remote) |
 | T16 Key monitor screen | OK (pending the owner's check with the real remote) |
+| T17 Hide the mouse pointer | PARTIAL (to be confirmed on the TV) |
+| T18 Launched programs in their own scope | Fixed and tested; activation waits for a restart |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -153,6 +155,21 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **What it can and cannot tell:** it shows that the remote's events reach the receiver off-screen and that they are ignored; it cannot tell whether the TV itself also reacted to the button (that is the TV's behaviour, seen on the TV).
 **Also observed (web log):** from the same LAN device the mapping was saved at 18:12, 18:32 and 18:33 and the dry-run switch was turned off at 18:46:04; real launches of ES-DE followed.
 **Outcome:** OK, pending the owner's check with the real remote.
+
+## T17 — Hide the mouse pointer on remote presses
+**Request:** when a remote button is pressed the mouse pointer should disappear.
+**Done:** a second virtual mouse moves the pointer to the bottom-right corner (5 relative moves of 5000 on each axis, at most one burst every 0.4 s) on every remote press while the machine is on the TV screen; it does nothing in dry run, and a web switch (*Mouse pointer* card, file `pointer-visible`) or `--no-hide-pointer` turns it off. Chosen because a GNOME Shell extension would need a session restart on Wayland (it would have closed ES-DE and Kodi), and `gsettings` has no per-keypress hiding.
+**DONE (tests):** 35 offline tests pass; the pointer ones check the move direction (positive X and Y), the throttle, the off switch, dry run, a missing device, and that the log shows `pointer=moved` only for presses while on screen (also for unmapped buttons).
+**DONE (on the machine):** the device "TV Remote pointer mover (CEC-Over-LAN)" exists; the journal shows `pointer=moved` on a real `KEY_0` press.
+**Not verified:** that the pointer is really out of sight on the TV (I cannot see the screen), and the behaviour with several monitors or with a dock that reacts to the bottom-right corner.
+**Outcome:** PARTIAL until the owner confirms on the TV.
+
+## T18 — Programs launched from the remote lived inside the receiver's cgroup
+**Found while looking at "1.3 GB peak and 3 minutes of CPU" in the service stop log (twice).** `systemctl --user status tv-remote` listed ES-DE and YouTube TV among the service's processes (113 tasks, 851 MB) and `/proc/<es-de>/cgroup` pointed to `tv-remote.service`. So the memory and CPU were the launched applications, **not a leak**; but it also means that **restarting or stopping the receiver closes every application it launched** (this happened at least once during a deployment).
+**Fix:** `scope_cmd()` runs `gio launch` / `xdg-open` through `systemd-run --user --scope`, so each program gets its own scope.
+**DONE (on the machine, inside a transient service that mimics the receiver):** the service cgroup was `cec-scope-test*.service`, the program's `run-p…scope`; after the service ended the program was still running and its scope `active running`. A first attempt looked like the program died: it had inherited the closed service's `--pipe`; the real code redirects stdio to `/dev/null` and was re-tested that way.
+**Not yet active:** the running receiver still has the old code until it is restarted, and restarting it closes the applications launched before (they are in its cgroup). New launches after that restart are safe.
+**Outcome:** fixed in code and tested; activation waits for a restart.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

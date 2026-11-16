@@ -106,6 +106,8 @@ class Gate:
         self.out = out
         self.active = args.no_gate
         self.stop = threading.Event()
+        self.fails = 0
+        self.on_dead = None  # called when the TV link looks dead (set by run())
 
     def read_path(self):
         try:
@@ -122,6 +124,14 @@ class Gate:
         want = self.args.active_path.lower()
         while not self.stop.is_set():
             path = self.read_path()
+            # watchdog: if the TV stops answering (standby, reboot, port change) the adb link
+            # can stay "open" forever; after a few failed reads force a reconnection
+            self.fails = self.fails + 1 if path is None else 0
+            if self.fails >= self.args.dead_after and self.on_dead:
+                print(f"[watchdog] {self.fails} failed source reads, restarting the adb link",
+                      flush=True)
+                self.fails = 0
+                self.on_dead()
             now = path == want  # if the read fails (None) -> do not inject
             if now != self.active:
                 self.active = now
@@ -152,12 +162,22 @@ def run(args):
     simple, long_combo = build_maps(args.back_key)
     out = Out(simple, long_combo, args.dry_run)
     gate = Gate(args, out)
+    current = {"proc": None}
+
+    def kill_link():
+        p = current["proc"]
+        if p and p.poll() is None:
+            p.kill()
+
+    gate.on_dead = kill_link
     if not args.no_gate:
         threading.Thread(target=gate.loop, daemon=True).start()
     delay = 1
     try:
         while True:
             try:
+                # clear any stale "offline" entry before reconnecting
+                subprocess.run(["adb", "disconnect", args.target], capture_output=True, timeout=10)
                 subprocess.run(["adb", "connect", args.target], capture_output=True, timeout=15)
             except (subprocess.TimeoutExpired, OSError) as exc:
                 print(f"adb connect failed ({type(exc).__name__}), retrying in {delay}s", flush=True)
@@ -167,6 +187,7 @@ def run(args):
             proc = subprocess.Popen(
                 ["adb", "-s", args.target, "shell", "getevent", "-l"],
                 stdout=subprocess.PIPE, text=True, bufsize=1)
+            current["proc"] = proc
             started = time.monotonic()
             for line in proc.stdout:
                 m = LINE.search(line)
@@ -197,4 +218,6 @@ if __name__ == "__main__":
                    help="CEC routing path of the HDMI port of this machine (HDMI 1 = 0x1000)")
     p.add_argument("--poll", type=float, default=1.5, help="seconds between two source checks")
     p.add_argument("--no-gate", action="store_true", help="always inject")
+    p.add_argument("--dead-after", type=int, default=4,
+                   help="consecutive failed source reads before the adb link is restarted")
     run(p.parse_args())

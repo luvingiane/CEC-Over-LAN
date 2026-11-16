@@ -3,11 +3,11 @@
 Last update: 2026-11-16.
 
 ## Closed
-- T1, T2, T3, T6, T8, T11: see REPORT.md.
+- T1, T2, T3, T4, T6, T8, T11: see REPORT.md (T4: standby drops the network and switches wireless debugging off).
 - T5, T7, T9: partial, see REPORT.md.
 
 ## Open
-- T4 (standby), T10 (systemd unit installation), key latency.
+- T10 (systemd unit installation), key latency.
 - Choice between Esc and Backspace as "Back" in ES-DE, live confirmation.
 - `KEY_8`: unknown key.
 

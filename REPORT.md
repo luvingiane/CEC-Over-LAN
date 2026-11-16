@@ -8,7 +8,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T1 Video streaming | OK |
 | T2 adb from the VM | OK |
 | T3 getevent, TV on | OK |
-| T4 getevent, standby | NOT TESTED |
+| T4 getevent, standby | OK (no network in standby; wireless debugging switches off) |
 | T5 Keys and UI | PARTIAL |
 | T6 Persistence after reboot | OK (port and pairing do not survive a reboot) |
 | T7 Latency | PARTIAL |
@@ -38,7 +38,12 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Risks:** read-only.
 
 ## T4 — getevent in standby
-**Outcome:** NOT TESTED. I don't know whether `adb` stays reachable and whether the keys arrive with the TV in standby. To do: the owner puts the TV in standby, then `adb devices`, `adb connect`, `getevent -lt`.
+**DONE (commands on the VM, TV put in standby by the owner with the remote):** `ping` to the TV 0% answered (100% loss), `adb connect` -> `No route to host`, `adb devices` kept showing a stale `device` line, `adb shell` on that link -> `error: closed` / timeout. While the TV was in standby no key can reach the VM.
+**DONE (monitor log, 3 s interval):** `16:16:27 ping=down`, `16:16:47 ping=up` — the TV answers the ping again about 20 s after being woken by the remote.
+**DONE (after wake-up):** `adb connect` on the same port -> `offline` / timeout; `adb shell` -> `device offline`. **Reported by the owner:** Wireless debugging is also switched off by the standby. So after a standby the connection port and the pairing have to be redone, exactly as after a reboot (T6).
+**DONE (journal):** the receiver process stayed `active (running)` but did not notice that the link was dead and logged nothing. Fixed with a watchdog in `receiver/tv_remote.py` (after `--dead-after` failed source reads, default 4, the adb link is killed and re-established, with a stale-entry `adb disconnect` first).
+**I don't know:** whether keys reach `getevent` while the TV is in standby with wireless debugging still on (not possible here, it turns off), whether the TV's remote wake-up key produces a readable event.
+**Outcome:** OK (answer: with the TV in standby the machine cannot receive keys, and wireless debugging is lost). This is a second argument for variant B.
 
 ## T5 — Keys and consumption by the UI
 **DONE (from the logs):** codes seen: `KEY_UP/DOWN/LEFT/RIGHT`, `KEY_SELECT`, `KEY_BACK`, `KEY_VOLUMEUP/DOWN`, `KEY_CHANNELUP/DOWN`, `KEY_SEARCH`, `KEY_STOPCD`, `KEY_EJECTCD`, `KEY_SHUFFLE`, `KEY_8`. Every press produces `DOWN` and then `UP`.
@@ -93,10 +98,10 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Outcome:** OK.
 
 ## Recommendation (provisional)
-Variant A (no app on the TV) works, but T6 showed that after a TV reboot the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.
+Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.
 
 ## To do
-T4, T10, key-latency measurement, confirm Backspace in ES-DE, Kodi, install the systemd unit, variant B (APK + AccessibilityService).
+T10, key-latency measurement, confirm Backspace in ES-DE, Kodi, install the systemd unit, variant B (APK + AccessibilityService).
 
 ## Proposals
 - Long press for other keys.

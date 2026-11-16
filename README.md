@@ -70,6 +70,8 @@ The *Setup wizard* card walks through the whole mapping in four steps, so you ne
 3. **Shortcuts** (optional): press a button, then bind it to an installed **application** or a **website**, on tap or on long press.
 4. **Review and save**: replace the current mapping or add to it.
 
+The first screen has a **Test run** checkbox (on by default): the wizard goes through every step but writes nothing; the last step only shows what would be saved. Untick it to save for real. Steps 1 to 3 never write anything anyway.
+
 ### Key mapping
 
 The *Key mapping* card edits `~/cec-over-lan/keymap.json`, which the receiver reloads by itself within a second (no restart):

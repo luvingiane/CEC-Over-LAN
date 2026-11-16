@@ -310,7 +310,7 @@ $('bReset').onclick = () => { if (confirm('Discard your mapping and go back to t
 // 1 discover (nothing recorded) -> 2 assign (guided, from the command lists) -> 3 shortcuts -> 4 review
 const W = { step: 0, after: 0, timer: null, seen: {}, last: '', profiles: [], chosen: {}, queue: [], i: 0,
             started: false, done: {}, owner: {}, assigned: {}, lastAccept: 0, msg: '', waiting: false,
-            pending: null, mode: 'replace' };
+            pending: null, mode: 'replace', dry: true };   // dry: test run, nothing is saved
 const wiz = () => $('wiz');
 
 function wizReset() {
@@ -350,6 +350,8 @@ function wizRender() {
     box.append(el('div', { className: 'hint', textContent:
       'Guided setup in four short steps: (1) press every button to see which ones the remote has, nothing is recorded; ' +
       '(2) press the button you want for each command of a list (ES-DE and more); (3) add shortcuts that open an app or a website; (4) review and save.' }),
+      (() => { const cb = el('input', { type: 'checkbox', checked: W.dry }); cb.onchange = () => { W.dry = cb.checked; };
+        return el('label', { className: 'radio' }, cb, el('span', { textContent: 'Test run: go through every step but do NOT save anything at the end' })); })(),
       btn('Start the wizard', wizStart));
   } else if (W.step === 1) {
     box.append(el('h3', { textContent: 'Step 1 of 4 · Discover the buttons' }),
@@ -362,7 +364,9 @@ function wizRender() {
   } else if (W.step === 2) wizRenderAssign();
   else if (W.step === 3) wizRenderShortcuts();
   else if (W.step === 5) box.append(el('h3', { textContent: 'Done' }),
-    el('div', { className: 'msg good', textContent: 'Saved. The receiver applies the new mapping within a second: try the buttons now (with the machine on screen).' }),
+    el('div', { className: 'msg good', textContent: W.dry
+      ? 'Test run finished: nothing was saved or changed. Untick "Test run" on the first screen to save for real.'
+      : 'Saved. The receiver applies the new mapping within a second: try the buttons now (with the machine on screen).' }),
     btn('Close the wizard', () => { wizReset(); wizGo(0); }, true));
   else wizRenderReview();
 }
@@ -466,12 +470,14 @@ function wizRenderReview() {
         el('td', { textContent: e.long ? describe(e.long) + ` (${e.hold || 3} s)` : '' }))); });
     box.append(t);
   }
-  [['replace', 'Replace my current mapping with this one'], ['merge', 'Add to my current mapping (these buttons override the same ones)']].forEach(([v, text]) => {
+  if (W.dry) box.append(el('div', { className: 'msg good', textContent: 'Test run: this is what would be saved. Nothing will be written.' }));
+  else [['replace', 'Replace my current mapping with this one'], ['merge', 'Add to my current mapping (these buttons override the same ones)']].forEach(([v, text]) => {
     const r = el('input', { type: 'radio', name: 'wmode', checked: W.mode === v }); r.onchange = () => { W.mode = v; };
     box.append(el('label', { className: 'radio' }, r, el('span', { textContent: text })));
   });
   const out = el('div', { className: 'msg' });
-  const save = btn('Save', async () => {
+  const save = btn(W.dry ? 'Finish (saves nothing)' : 'Save', async () => {
+    if (W.dry) { wizGo(5); return; }
     if (!keys.length) return;
     const base = W.mode === 'merge' ? JSON.parse(JSON.stringify(rows)) : {};
     keys.forEach(k => { const e = W.assigned[k]; const r = base[k] = base[k] || { tap: '', long: '', hold: '' };

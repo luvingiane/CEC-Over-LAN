@@ -27,6 +27,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T20 Reaching the dock | PARTIAL (single-tap `Ctrl+Alt+Tab` not verified) |
 | T21 On-screen keyboard | PARTIAL (typing not tried yet) |
 | T22 Restart without closing launched apps | OK |
+| T23 Key names people type (Super+S) | Fixed and tested; effect of the shortcut to be confirmed |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -201,6 +202,14 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 ## T22 — Restarting the receiver closed the launched applications (follow-up of T18)
 The T18 fix only applies to applications launched after the receiver restarts with the new code; ES-DE and YouTube TV started by the old code were still in the receiver's cgroup. The receiver was restarted with `KillMode=process` for that single restart (a temporary drop-in, removed afterwards; `KillMode` is `control-group` again) so that they stayed open; systemd logs a "left-over process" warning for them.
 **DONE:** both applications still running after the restart, the service active with the new code.
+
+## T23 — "KEY_META+KEY_S does not work"
+**What happened (DONE, from the machine's journal and keymap):** the combination never reached the receiver: the saved mapping has no entry with `Super+S` and the log has no such press. `KEY_META` is not a key name in Linux input (Super is `KEY_LEFTMETA`), so the save was refused, and the refusal said only "invalid tap action" without naming the key or the right one. The shortcut itself had been given to the owner as "Super+S" (read from `gsettings`: `toggle-quick-settings = ['<Super>s']`), without the exact name the tool needs, and without ever having been exercised through the receiver.
+**Done:** key names are now accepted the way people write them (`Super+S`, `KEY_META+KEY_S`, `Ctrl+Alt+Tab`, `alt+f4`, `escape`, any case, spaces around `+`) and stored in the canonical form; refusals say which name is wrong and suggest the right one (`unknown key 'KEY_LEFTMETAA' (did you mean KEY_LEFTMETA, …)`), and name power keys as not allowed.
+**DONE (tests):** 60 offline tests pass, including the exact string that failed (`KEY_META+KEY_S`), the canonical form being what gets saved, and the things that must still be refused (`rm -rf ~`, `KEY_POWER`, `Alt+Fx9`, 5 keys).
+**DONE (on the machine):** the web service (restarted alone, so the launched applications stayed open) accepts `KEY_META+KEY_S`, `Super+S` and `Ctrl+Alt+Tab`.
+**Inconclusive:** whether an injected `Super+S` opens the quick settings menu. I injected it (held 150 ms and instantly) from a test virtual keyboard and compared the focused window, but the quick settings menu does not change `focus_window`, so the measurement cannot tell. The events are injected without error; whether the menu opens was not observed (I cannot see the TV). A possible cause to rule out: the focused application (YouTube TV) may inhibit compositor shortcuts.
+**Outcome:** the name problem is fixed and tested; the effect of the shortcut is to be confirmed by the owner.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

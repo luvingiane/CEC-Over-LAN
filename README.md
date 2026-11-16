@@ -65,6 +65,10 @@ Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers
 
 The *Dry run* card has a switch: while it is on (a file `~/cec-over-lan/dry-run` exists; the receiver checks it twice a second, no restart), pressing a remote button presses **nothing** and launches **nothing** on the machine. The receiver only logs what it would do, and the card lists it ("would press KEY_ENTER", "would launch app kodi.desktop"); real launches are listed as "LAUNCHED". A key that is already held down when you switch it on is still released, so nothing can stay stuck. `--dry-run` on the command line is the permanent version.
 
+### Writing key combinations
+
+Where an action is a key or a combination you can write the evdev names (`KEY_LEFTMETA+KEY_S`) or the names people use: `Super+S`, `Win+Q`, `Ctrl+Alt+Tab`, `alt+f4`, `escape`. They are converted to the canonical evdev form when saved. `Super` is `KEY_LEFTMETA` (there is no plain `KEY_META` key in Linux, but `KEY_META` is accepted as an alias). Up to 4 keys; power-type keys are refused. An invalid name is reported with a suggestion: `unknown key 'KEY_LEFTMETAA' (did you mean KEY_LEFTMETA, …?)`.
+
 ### Per-app exceptions
 
 Every key can have exceptions that apply only while a given application has the keyboard focus, e.g. *Back* sends `Esc` (what GNOME wants) but `Backspace` in ES-DE, where `Esc` opens the main menu:

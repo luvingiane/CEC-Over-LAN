@@ -30,6 +30,7 @@ keymap.json format:
 """
 import argparse
 import ast
+import difflib
 import json
 import os
 import re
@@ -76,14 +77,57 @@ def valid_target(name):
     return valid_key(name) and name not in DENY_TARGETS
 
 
+# Names people actually type for modifiers and common keys -> the evdev key name.
+ALIASES = {
+    "META": "KEY_LEFTMETA", "SUPER": "KEY_LEFTMETA", "WIN": "KEY_LEFTMETA", "WINDOWS": "KEY_LEFTMETA",
+    "GUI": "KEY_LEFTMETA", "CMD": "KEY_LEFTMETA", "COMMAND": "KEY_LEFTMETA",
+    "CTRL": "KEY_LEFTCTRL", "CONTROL": "KEY_LEFTCTRL", "ALT": "KEY_LEFTALT", "ALTGR": "KEY_RIGHTALT",
+    "SHIFT": "KEY_LEFTSHIFT", "ESCAPE": "KEY_ESC", "RETURN": "KEY_ENTER", "DEL": "KEY_DELETE",
+    "INS": "KEY_INSERT", "PGUP": "KEY_PAGEUP", "PGDN": "KEY_PAGEDOWN", "PAGE_UP": "KEY_PAGEUP",
+    "PAGE_DOWN": "KEY_PAGEDOWN", "SPACEBAR": "KEY_SPACE",
+}
+
+
+def canon_key(token):
+    """'Super', 'KEY_META', 'ctrl', 'f4', 'KEY_f4' -> 'KEY_LEFTMETA', 'KEY_LEFTMETA', 'KEY_LEFTCTRL',
+    'KEY_F4', 'KEY_F4'. Unknown names are returned upper-cased (and rejected later)."""
+    t = token.strip().upper().replace(" ", "_")
+    bare = t[4:] if t.startswith("KEY_") else t
+    if bare in ALIASES:
+        return ALIASES[bare]
+    return t if t.startswith("KEY_") else "KEY_" + t
+
+
 def parse_combo(text):
-    """'KEY_LEFTALT+KEY_F4' -> ['KEY_LEFTALT', 'KEY_F4'], or None if invalid/empty."""
+    """'KEY_LEFTALT+KEY_F4', 'Alt+F4', 'Super+S' -> evdev names, or None if invalid/empty."""
     if not isinstance(text, str):
         return None
-    names = [p.strip() for p in text.split("+") if p.strip()]
+    names = [canon_key(p) for p in text.split("+") if p.strip()]
     if not names or len(names) > 4 or not all(valid_target(n) for n in names):
         return None
     return names
+
+
+def combo_hint(text):
+    """Why a key combination was refused, in words the owner can act on."""
+    if not isinstance(text, str) or not text.strip():
+        return "empty"
+    parts = [p for p in text.split("+") if p.strip()]
+    if len(parts) > 4:
+        return "at most 4 keys per combination"
+    for p in parts:
+        name = canon_key(p)
+        if name in DENY_TARGETS:
+            return f"{name} is not allowed (it would power off or suspend the machine)"
+        if not valid_key(name):
+            stem = name[4:]
+            names = []
+            if e is not None:
+                names = sorted({n for v in e.keys.values() for n in (v if isinstance(v, (list, tuple)) else [v])
+                                if n.startswith("KEY_")})
+            close = [n for n in names if stem and stem in n][:3] or difflib.get_close_matches(name, names, n=3)
+            return f"unknown key '{p.strip()}'" + (f" (did you mean {', '.join(close)}?)" if close else "")
+    return "invalid"
 
 
 def parse_action(text):
@@ -101,6 +145,18 @@ def parse_action(text):
         return {"type": "url", "url": url} if URL_RE.match(url) else None
     keys = parse_combo(text)
     return {"type": "keys", "keys": keys} if keys else None
+
+
+def action_hint(text):
+    """Why an action text was refused (keys, app:, url:)."""
+    t = str(text).strip()
+    if t.startswith("app:"):
+        return "an application is written app:<file>.desktop"
+    if t.startswith("url:"):
+        return "a website is written url:http(s)://…"
+    if t.startswith("osk:"):
+        return "the only keyboard action is osk:toggle"
+    return combo_hint(t)
 
 
 def action_to_text(action):
@@ -214,9 +270,9 @@ def parse_entry(spec, label):
     tap = parse_action(spec["tap"]) if spec.get("tap") else None
     long_ = parse_action(spec["long"]) if spec.get("long") else None
     if spec.get("tap") and tap is None:
-        return None, f"{label}: invalid tap action"
+        return None, f"{label}: invalid tap action ({action_hint(spec['tap'])})"
     if spec.get("long") and long_ is None:
-        return None, f"{label}: invalid long action"
+        return None, f"{label}: invalid long action ({action_hint(spec['long'])})"
     try:
         hold = float(spec.get("hold", DEFAULT_HOLD))
     except (TypeError, ValueError):

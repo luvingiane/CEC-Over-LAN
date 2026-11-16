@@ -560,6 +560,38 @@ class Actions(unittest.TestCase):
             self.assertIn("--scope", cmd)
             self.assertIn("--user", cmd)
 
+    def test_names_people_actually_type_are_accepted(self):
+        keys = lambda t: (core.parse_action(t) or {}).get("keys")  # noqa: E731
+        self.assertEqual(keys("KEY_META+KEY_S"), ["KEY_LEFTMETA", "KEY_S"])   # the one that failed
+        self.assertEqual(keys("Super+S"), ["KEY_LEFTMETA", "KEY_S"])
+        self.assertEqual(keys("super + s"), ["KEY_LEFTMETA", "KEY_S"])
+        self.assertEqual(keys("Win+Q"), ["KEY_LEFTMETA", "KEY_Q"])
+        self.assertEqual(keys("Ctrl+Alt+Tab"), ["KEY_LEFTCTRL", "KEY_LEFTALT", "KEY_TAB"])
+        self.assertEqual(keys("alt+f4"), ["KEY_LEFTALT", "KEY_F4"])
+        self.assertEqual(keys("KEY_f4"), ["KEY_F4"])
+        self.assertEqual(keys("escape"), ["KEY_ESC"])
+        self.assertEqual(keys("KEY_LEFTMETA+KEY_S"), ["KEY_LEFTMETA", "KEY_S"])  # canonical form unchanged
+
+    def test_still_refuses_what_is_not_a_key_or_is_dangerous(self):
+        for bad in ("Alt+Fx9", "KEY_POWER", "Super+KEY_SLEEP", "a b c d e", "rm -rf ~", "KEY_A;reboot"):
+            self.assertIsNone(core.parse_action(bad), bad)
+
+    def test_the_error_says_what_is_wrong(self):
+        self.assertIn("unknown key 'KEY_LEFTMETAA'", core.combo_hint("KEY_LEFTMETAA+KEY_S"))
+        self.assertIn("KEY_LEFTMETA", core.combo_hint("KEY_LEFTMETAA+KEY_S"))     # and suggests the right one
+        self.assertIn("not allowed", core.combo_hint("KEY_POWER"))
+        self.assertIn("at most 4", core.combo_hint("A+B+C+D+E"))
+        entries, errors = core.normalise({"KEY_X": {"tap": "KEY_LEFTMETAA+KEY_S"}})
+        self.assertEqual(entries, {})
+        self.assertIn("did you mean KEY_LEFTMETA", errors[0])
+
+    def test_saved_form_is_the_canonical_one(self):
+        import tv_remote_web as web
+        entries, _ = core.normalise({"KEY_Y": {"tap": "Super+S", "long": "ctrl+alt+tab"}})
+        saved = web.to_file_format(entries)["KEY_Y"]
+        self.assertEqual(saved["tap"], "KEY_LEFTMETA+KEY_S")
+        self.assertEqual(saved["long"], "KEY_LEFTCTRL+KEY_LEFTALT+KEY_TAB")
+
     def test_desktop_path_rejects_traversal(self):
         self.assertIsNone(core.desktop_path("../../etc/passwd"))
         self.assertIsNone(core.desktop_path("nonexistent-app.desktop"))

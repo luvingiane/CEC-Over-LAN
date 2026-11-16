@@ -170,6 +170,75 @@ class DryRun(unittest.TestCase):
         self.assertTrue(out.is_dry())
 
 
+def seen_lines(router, *events):
+    """Feed (key, state, active) events and return the [seen] log lines."""
+    import contextlib
+    import io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        for ev in events:
+            router.on_event(*ev)
+    return [ln for ln in buf.getvalue().splitlines() if ln.startswith("[seen]")]
+
+
+class LogFormat(unittest.TestCase):
+    def test_off_screen_is_flagged_and_not_applied(self):
+        router, out, _ = make_router({"KEY_SELECT": {"tap": "KEY_ENTER"}})
+        lines = seen_lines(router, ("KEY_SELECT", "DOWN", False), ("KEY_SELECT", "UP", False))
+        self.assertIn("screen=no", lines[0])
+        self.assertIn("decision=off-screen", lines[0])
+        self.assertIn("screen=no", lines[1])
+        self.assertEqual(out.events, [])
+
+    def test_decision_and_release_details(self):
+        router, _, _ = make_router({"KEY_SELECT": {"tap": "KEY_ENTER"}})
+        lines = seen_lines(router, ("KEY_SELECT", "DOWN", True), ("KEY_SELECT", "UP", True),
+                           ("KEY_X", "DOWN", True))
+        self.assertIn("screen=yes decision=tap:KEY_ENTER dry=no", lines[0])
+        self.assertRegex(lines[1], r"held=\d+\.\d\d result=released")
+        self.assertIn("decision=unmapped", lines[2])
+
+    def test_long_press_results(self):
+        router, _, _ = make_router({"KEY_EJECTCD": {"long": "KEY_LEFTALT+KEY_F4", "hold": 0.3},
+                                    "KEY_FIND": {"tap": "url:https://example.org/path?x=1",
+                                                 "long": "app:kodi.desktop", "hold": 0.3}})
+        short = seen_lines(router, ("KEY_EJECTCD", "DOWN", True), ("KEY_EJECTCD", "UP", True))
+        self.assertIn("decision=wait-long-0.3s:KEY_LEFTALT+KEY_F4", short[0])
+        self.assertIn("result=short-press-no-action", short[1])
+        longp = []
+        longp += seen_lines(router, ("KEY_EJECTCD", "DOWN", True))
+        time.sleep(0.6)
+        longp += seen_lines(router, ("KEY_EJECTCD", "UP", True))
+        self.assertIn("result=long-fired", longp[1])
+        both = seen_lines(router, ("KEY_FIND", "DOWN", True))
+        self.assertIn("tap-on-release:url:example.org", both[0])  # URL reduced to the host, no spaces
+        self.assertNotIn(" ", both[0].split("decision=")[1].split(" dry=")[0])
+
+    def test_web_monitor_parses_the_new_format(self):
+        import os
+        import tv_remote_web as web
+        f = Path(tempfile.mkdtemp()) / "ev.txt"
+        f.write_text("100.5 [seen] KEY_SELECT DOWN screen=yes decision=tap:KEY_ENTER dry=yes\n"
+                     "100.7 [seen] KEY_SELECT UP screen=yes held=0.20 result=released\n"
+                     "101.0 [seen] KEY_EXIT DOWN screen=no decision=off-screen dry=no\n"
+                     "102.0 [seen] KEY_OLD DOWN\n")
+        os.environ["CEC_EVENTS_FILE"] = str(f)
+        try:
+            got = web.monitor({"after": ["0"]})["events"]
+            self.assertEqual(len(got), 4)
+            self.assertEqual((got[0]["key"], got[0]["state"], got[0]["screen"], got[0]["dry"],
+                              got[0]["decision"]), ("KEY_SELECT", "DOWN", True, True, "tap:KEY_ENTER"))
+            self.assertEqual((got[1]["held"], got[1]["result"]), (0.2, "released"))
+            self.assertEqual((got[2]["screen"], got[2]["decision"]), (False, "off-screen"))
+            self.assertIsNone(got[3]["screen"])           # old format: no fields, no crash
+            self.assertEqual([e["key"] for e in web.monitor({"after": ["100.6"]})["events"]],
+                             ["KEY_SELECT", "KEY_EXIT", "KEY_OLD"])
+            self.assertEqual([e["key"] for e in web.events({"after": ["0"]})["events"]],
+                             ["KEY_SELECT", "KEY_EXIT", "KEY_OLD"])  # wizard feed still works
+        finally:
+            del os.environ["CEC_EVENTS_FILE"]
+
+
 class Actions(unittest.TestCase):
     def test_parse_action_kinds(self):
         self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})

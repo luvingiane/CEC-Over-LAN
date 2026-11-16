@@ -105,6 +105,13 @@ def action_to_text(action):
     return "url:" + action["url"]
 
 
+def brief(action):
+    """Short, space-free description of an action for the log (URLs are reduced to the host)."""
+    if action["type"] == "url":
+        return "url:" + urlparse(action["url"]).netloc
+    return action_to_text(action)
+
+
 def desktop_path(app_id):
     """Path of an installed .desktop file, or None."""
     if not DESKTOP_ID.match(app_id or ""):
@@ -322,6 +329,8 @@ class Router:
         self.holds = {}   # remote key -> injected names currently held down
         self.timers = {}  # remote key -> pending long-press Timer
         self.last_launch = {}
+        self.down_at = {}  # remote key -> monotonic time of the DOWN event (for the hold time)
+        self.fired = set()  # remote keys whose long action already fired
 
     def _click(self, names):
         for n in names:
@@ -344,43 +353,68 @@ class Router:
     def _fire_long(self, key, action):
         with self.lock:
             if self.timers.pop(key, None) is not None:
+                self.fired.add(key)
                 self._perform(action)
 
     def on_event(self, key, state, active):
-        print(f"[seen] {key} {state}", flush=True)
+        """Handle one remote event and log it in a form the web UI's key monitor can parse:
+        [seen] KEY_X DOWN screen=yes|no decision=<what will happen> dry=yes|no
+        [seen] KEY_X UP   screen=yes|no held=<seconds> result=<what happened>"""
+        now = time.monotonic()
         with self.lock:
             if state == "UP":
-                self._up(key)
-            elif active:
-                self._down(key)
+                held = now - self.down_at.pop(key, now)
+                detail = f"held={held:.2f} result={self._up(key)}"
+            else:
+                self.down_at[key] = now
+                decision = self._down(key) if active else "off-screen"
+                dry = "yes" if getattr(self.out, "is_dry", lambda: False)() else "no"
+                detail = f"decision={decision} dry={dry}"
+            print(f"[seen] {key} {state} screen={'yes' if active else 'no'} {detail}", flush=True)
 
     def _down(self, key):
+        """Start handling a press; returns a short description of the decision."""
         entry = self.keymap.get(key)
         if not entry:
-            return
+            return "unmapped"
         if entry["long"]:
             t = threading.Timer(entry["hold"], self._fire_long, args=(key, entry["long"]))
             self.timers[key] = t
             t.start()
-        elif entry["tap"]:
+            text = f"wait-long-{entry['hold']:g}s:{brief(entry['long'])}"
+            if entry["tap"]:
+                text += f"+tap-on-release:{brief(entry['tap'])}"
+            return text
+        if entry["tap"]:
             if entry["tap"]["type"] == "keys":
                 for n in entry["tap"]["keys"]:
                     self.out.key(n, 1)
                 self.holds[key] = entry["tap"]["keys"]
             else:
                 self._perform(entry["tap"])
+            return "tap:" + brief(entry["tap"])
+        return "none"
 
     def _up(self, key):
+        """Finish a press; returns what happened at release."""
+        result = "released"
+        if key in self.fired:
+            self.fired.discard(key)
+            result = "long-fired"
         t = self.timers.pop(key, None)
         if t is not None:  # released before the hold time
             t.cancel()
             entry = self.keymap.get(key)
             if entry and entry["tap"]:
                 self._perform(entry["tap"])
+                result = "tap-clicked"
+            else:
+                result = "short-press-no-action"
         names = self.holds.pop(key, None)
         if names:
             for n in reversed(names):
                 self.out.key(n, 0)
+        return result
 
     def release_all(self):
         with self.lock:
@@ -391,6 +425,7 @@ class Router:
                 for n in reversed(names):
                     self.out.key(n, 0)
             self.holds.clear()
+            self.fired.clear()
 
 
 class Gate:

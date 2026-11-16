@@ -166,7 +166,7 @@ def do_service(data):
 
 
 KEYMAP_FILE = Path(os.environ.get("CEC_KEYMAP", core.KEYMAP_FILE))
-SEEN = re.compile(r"^\[seen\] (KEY_[A-Z0-9_]+) DOWN$")
+SEEN = re.compile(r"^\[seen\] (KEY_[A-Z0-9_]+) DOWN\b")
 
 
 def key_names():
@@ -238,8 +238,43 @@ def list_apps(_q=None):
     return {"ok": True, "apps": sorted(apps.values(), key=lambda a: a["name"].lower())}
 
 
-EVENT = re.compile(r"^(\d+\.\d+)\s+\S+\s+\S+?:\s+\[seen\] (KEY_[A-Z0-9_]+) DOWN$")
-EVENT_FILE_LINE = re.compile(r"^(\d+\.\d+)\s+\[seen\] (KEY_[A-Z0-9_]+) DOWN$")
+EVENT = re.compile(r"^(\d+\.\d+)\s+\S+\s+\S+?:\s+\[seen\] (KEY_[A-Z0-9_]+) DOWN\b")
+EVENT_FILE_LINE = re.compile(r"^(\d+\.\d+)\s+\[seen\] (KEY_[A-Z0-9_]+) DOWN\b")
+MON = re.compile(r"^(\d+\.\d+)\s+\S+\s+\S+?:\s+\[seen\] (KEY_[A-Z0-9_]+) (DOWN|UP)\b(.*)$")
+MON_FILE_LINE = re.compile(r"^(\d+\.\d+)\s+\[seen\] (KEY_[A-Z0-9_]+) (DOWN|UP)\b(.*)$")
+FIELD = re.compile(r"(\w+)=(\S+)")
+
+
+def monitor(q):
+    """Every remote event the receiver saw after a timestamp, with what it decided to do."""
+    try:
+        after = float(q.get("after", [time.time() - 60])[0])
+    except (ValueError, IndexError):
+        after = time.time() - 60
+    test_file = os.environ.get("CEC_EVENTS_FILE")  # test hook, same file as /api/events
+    if test_file:
+        try:
+            lines = Path(test_file).read_text().splitlines()
+        except OSError:
+            lines = []
+        pattern = MON_FILE_LINE
+    else:
+        _, out = run(["journalctl", "--user", "-u", SERVICE, "--since", f"@{int(after)}",
+                      "-o", "short-unix", "--no-pager"], 5)
+        lines, pattern = out.splitlines(), MON
+    found = []
+    for line in lines:
+        m = pattern.match(line.strip())
+        if not m or float(m.group(1)) <= after:
+            continue
+        f = dict(FIELD.findall(m.group(4)))
+        found.append({
+            "ts": float(m.group(1)), "key": m.group(2), "state": m.group(3),
+            "screen": None if "screen" not in f else f["screen"] == "yes",
+            "decision": f.get("decision"), "dry": None if "dry" not in f else f["dry"] == "yes",
+            "held": float(f["held"]) if "held" in f else None, "result": f.get("result")})
+    return {"ok": True, "now": time.time(), "dry_run": core.DRYRUN_FILE.exists(),
+            "events": found[-200:]}
 
 
 def events(q):
@@ -348,7 +383,7 @@ POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_ser
         "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset, "/api/dryrun": do_dryrun}
 GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
        "/api/recent": recent, "/api/apps": list_apps, "/api/events": events,
-       "/api/profiles": profiles}
+       "/api/profiles": profiles, "/api/monitor": monitor}
 
 
 class Handler(BaseHTTPRequestHandler):

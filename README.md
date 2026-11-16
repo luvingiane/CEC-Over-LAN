@@ -65,6 +65,20 @@ Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers
 
 The *Dry run* card has a switch: while it is on (a file `~/cec-over-lan/dry-run` exists; the receiver checks it twice a second, no restart), pressing a remote button presses **nothing** and launches **nothing** on the machine. The receiver only logs what it would do, and the card lists it ("would press KEY_ENTER", "would launch app kodi.desktop"); real launches are listed as "LAUNCHED". A key that is already held down when you switch it on is still released, so nothing can stay stuck. `--dry-run` on the command line is the permanent version.
 
+### Key monitor
+
+The *Key monitor* card (press *Start monitor*) shows every remote button the receiver gets, as it happens: the button in big letters, whether the machine was **on screen or off screen** when it was pressed, what the receiver decided to do with it (applied, only a dry run, ignored because off-screen, unmapped, waiting for a long press) and, on release, how long it was held and what happened. Rows pressed off-screen are red and can be filtered. It is meant for analysis: the receiver reads the remote below Android's UI, so it sees buttons even when the TV is showing something else; those are never applied (`decision=off-screen`).
+
+The same information is in the service log, one line per event:
+
+```
+[seen] KEY_SELECT DOWN screen=yes decision=tap:KEY_ENTER dry=no
+[seen] KEY_SELECT UP screen=yes held=0.20 result=released
+[seen] KEY_EXIT DOWN screen=no decision=off-screen dry=no
+```
+
+Right after the receiver starts, the first source check takes about a second: buttons pressed in that moment are reported as off-screen.
+
 ### Setup wizard
 
 The *Setup wizard* card walks through the whole mapping in four steps, so you never have to know the key names:

@@ -53,6 +53,12 @@
   td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top;
            word-break:break-word; }
   th { color:var(--muted); font-weight:500; }
+  .evrow { border-bottom:1px solid var(--line); padding:7px 0; font-size:13px; }
+  .evhead { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-variant-numeric:tabular-nums; }
+  .evrow .hint { margin:2px 0 0; }
+  .evrow.off .evhead, .evrow.off .hint { color:var(--bad); }
+  .badge { padding:4px 10px; border-radius:999px; font-size:13px; font-weight:600; border:1px solid var(--line); }
+  .badge.on { color:var(--ok); } .badge.offs { color:var(--bad); }
   .radio { display:flex; gap:10px; align-items:flex-start; margin:8px 0; font-size:14px; }
   .radio input { width:auto; margin-top:4px; }
 </style>
@@ -76,6 +82,21 @@
     <div class="msg" id="mDry"></div>
     <div class="hint">Latest actions (newest last). "would …" = dry run, nothing happened; "LAUNCHED" = a real launch:</div>
     <div class="hint" id="dryList">—</div>
+  </div>
+
+  <div class="card" id="monCard">
+    <h2>Key monitor</h2>
+    <div class="hint">Shows every button the receiver gets, <b>also when the machine is not on the TV screen</b>
+      ("off-screen"), and what it decided to do with it. Use it to see which buttons still reach the machine.</div>
+    <div class="grid">
+      <button id="bMon">Start monitor</button>
+      <button class="alt" id="bMonClear">Clear</button>
+    </div>
+    <div class="big" id="monKey">—</div>
+    <div class="chips" id="monBadges"></div>
+    <div class="hint" id="monStats">stopped</div>
+    <label class="radio"><input type="checkbox" id="monOff"><span>Show only off-screen buttons</span></label>
+    <div id="monTable"></div>
   </div>
 
   <div class="card">
@@ -516,6 +537,51 @@ function wizRenderReview() {
     save.disabled = false; });
   box.append(nav(btn('Back', () => wizGo(3), true), save), out);
 }
+// ---------- key monitor ----------
+const M = { on: false, after: 0, timer: null, events: [], total: 0, off: 0, unmapped: 0 };
+const hhmmss = ts => { const d = new Date(ts * 1000); const p = (n, l = 2) => String(n).padStart(l, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`; };
+function monWhat(ev) {
+  if (ev.state === 'UP') return `released after ${ev.held === null ? '?' : ev.held.toFixed(2)} s · ${ev.result || '?'}`;
+  if (ev.screen === false) return 'ignored: machine not on the TV screen';
+  if (!ev.decision) return '(old log format)';
+  return ev.decision.replace(/^tap:/, 'would do: ').replace(/^wait-long-/, 'long press needed: ') + (ev.dry ? '  [dry run]' : '');
+}
+function monRender() {
+  const last = M.events[M.events.length - 1];
+  $('monKey').textContent = last ? labelOf(last.key) : '—';
+  const b = $('monBadges'); b.textContent = '';
+  if (last) {
+    b.append(el('span', { className: 'badge', textContent: last.state === 'DOWN' ? '↓ pressed' : '↑ released' }));
+    if (last.screen !== null) b.append(el('span', { className: 'badge ' + (last.screen ? 'on' : 'offs'), textContent: last.screen ? 'ON SCREEN' : 'OFF SCREEN' }));
+    b.append(el('span', { className: 'badge', textContent: monWhat(last) }));
+  }
+  $('monStats').textContent = M.on ? `running · ${M.total} events · ${M.off} off-screen · ${M.unmapped} unmapped presses` : `stopped · ${M.total} events · ${M.off} off-screen`;
+  const only = $('monOff').checked, box = $('monTable'); box.textContent = '';
+  const rowsEv = M.events.filter(e => !only || e.screen === false).slice(-40).reverse();
+  if (!rowsEv.length) { box.append(el('div', { className: 'hint', textContent: 'No events yet.' })); return; }
+  rowsEv.forEach(e => box.append(el('div', { className: 'evrow' + (e.screen === false ? ' off' : '') },
+    el('div', { className: 'evhead' }, el('span', { textContent: hhmmss(e.ts) }), el('b', { textContent: e.key }),
+      el('span', { textContent: (e.state === 'DOWN' ? '↓ ' : '↑ ') + (e.screen === null ? '?' : e.screen ? 'on screen' : 'OFF SCREEN') })),
+    el('div', { className: 'hint', textContent: monWhat(e) }))));
+}
+async function monPoll() {
+  try {
+    const r = await api('/api/monitor?after=' + M.after);
+    r.events.forEach(ev => { M.after = Math.max(M.after, ev.ts); M.events.push(ev);
+      if (ev.state === 'DOWN') { M.total++; if (ev.screen === false) M.off++; if (ev.decision === 'unmapped') M.unmapped++; } });
+    if (M.events.length > 400) M.events.splice(0, M.events.length - 400);
+    if (r.events.length) monRender();
+  } catch (e) {}
+}
+$('bMon').onclick = async () => {
+  if (M.on) { M.on = false; clearInterval(M.timer); M.timer = null; $('bMon').textContent = 'Start monitor'; monRender(); return; }
+  try { M.after = (await api('/api/monitor?after=9999999999')).now; } catch (e) { M.after = Date.now() / 1000; }
+  M.on = true; $('bMon').textContent = 'Stop monitor'; M.timer = setInterval(monPoll, 600); monRender();
+};
+$('bMonClear').onclick = () => { M.events = []; M.total = M.off = M.unmapped = 0; monRender(); };
+$('monOff').onchange = monRender;
+
 wizRender();
 
 loadApps(); refresh(); setInterval(refresh, 3000);

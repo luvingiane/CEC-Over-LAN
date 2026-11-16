@@ -20,6 +20,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T13 Editable key mapping | OK (pending the owner's check on the real remote) |
 | T14 Setup wizard and launch actions | OK (pending the owner's check with the real remote) |
 | T15 Dry-run switch | OK (pending the owner's test with the real remote) |
+| T16 Key monitor screen | OK (pending the owner's check with the real remote) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -141,6 +142,17 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Not tested:** the dry-run list with real key presses after the switch (the owner was about to try).
 **I don't know:** why the receiver's cgroup showed a 1.1 GB memory peak and about 3 minutes of CPU in roughly an hour before the last restart; it now uses about 15 MB.
 **Outcome:** OK, pending the owner's test with the real remote.
+
+## T16 — Key monitor screen
+**Request:** a screen that shows the pressed button, to analyse better whether the remote still reaches the machine for commands issued off-screen.
+**Done:** every event is logged as `[seen] KEY_X DOWN|UP screen=yes|no decision=… dry=… / held=… result=…` and the web UI has a *Key monitor* card (start/stop, clear, big button name, on/off-screen badge, decision, a history with off-screen rows in red and an "only off-screen" filter). New endpoint `/api/monitor`. Backward compatible: the wizard feed and the recent-keys chips still work with the new line format.
+**DONE (tests):** 28 offline tests pass, including: off-screen presses are flagged and never applied; decision/held/result fields; long-press results (`long-fired`, `short-press-no-action`); URLs reduced to the host so a log line never contains spaces; the web parser reads the new format, tolerates the old one and keeps the wizard feed working.
+**DONE (browser, 375x812, simulated events):** the big display, the ON SCREEN / OFF SCREEN badge, the "[dry run]" marker, the counters (5 events, 2 off-screen, 1 unmapped) and the off-screen filter behave as expected; no horizontal scroll. The first layout was a table that broke on a phone and was replaced by two-line rows.
+**DONE (on the machine, journal):** after the restart the new format is in the log (`[seen] KEY_0 DOWN screen=no decision=off-screen dry=no`).
+**Caveat found:** right after a restart the gate state is unknown for about a second, so a button pressed in that moment is logged as `screen=no` even if the machine is on screen (that `KEY_0` was followed by `machine on screen: yes`).
+**What it can and cannot tell:** it shows that the remote's events reach the receiver off-screen and that they are ignored; it cannot tell whether the TV itself also reacted to the button (that is the TV's behaviour, seen on the TV).
+**Also observed (web log):** from the same LAN device the mapping was saved at 18:12, 18:32 and 18:33 and the dry-run switch was turned off at 18:46:04; real launches of ES-DE followed.
+**Outcome:** OK, pending the owner's check with the real remote.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

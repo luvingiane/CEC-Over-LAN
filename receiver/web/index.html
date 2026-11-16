@@ -31,6 +31,17 @@
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .msg { margin-top:10px; font-size:14px; white-space:pre-wrap; word-break:break-word; }
   ol { margin:0 0 4px 18px; padding:0; color:var(--muted); font-size:14px; }
+  .hint { color:var(--muted); font-size:13px; margin:4px 0; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+  .chip { width:auto; margin:0; padding:8px 12px; border:1px solid var(--line); border-radius:999px;
+          background:var(--bg); color:var(--fg); font-size:14px; font-weight:500; }
+  .rowcard { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:10px 0; }
+  .rowhead { display:flex; justify-content:space-between; align-items:center; font-weight:600; }
+  .rowhead small { color:var(--muted); font-weight:400; margin-left:6px; }
+  .x { width:auto; margin:0; padding:0 10px; background:transparent; color:var(--bad);
+       border:0; font-size:22px; line-height:1; }
+  .rowcard input { font-size:16px; padding:10px; }
+  .rowcard .grid { grid-template-columns:2fr 1fr; align-items:end; }
 </style>
 </head>
 <body>
@@ -70,6 +81,23 @@
     <button id="bConnect">Connect and restart receiver</button>
     <button class="alt" id="bFind">Auto-detect ports</button>
     <div class="msg" id="mConnect"></div>
+  </div>
+
+  <div class="card">
+    <h2>Key mapping</h2>
+    <div class="hint">Press a key on the remote (with the machine on screen): it shows up here. Tap it to add a row.
+      <b>Tap</b> = what is pressed on the machine; <b>Long press</b> = fired once after the hold time
+      (leave empty if you don't need it). Combos use +, e.g. KEY_LEFTCTRL+KEY_C.</div>
+    <div class="chips" id="recent"><span class="hint">no keys seen yet</span></div>
+    <div id="rows"></div>
+    <div class="grid">
+      <button class="alt" id="bAddNum">Add numbers 0–9</button>
+      <button class="alt" id="bAddKey">Add key by name</button>
+    </div>
+    <button id="bSave">Save mapping</button>
+    <button class="alt" id="bReset">Reset to defaults</button>
+    <div class="msg" id="mMap"></div>
+    <datalist id="names"></datalist>
   </div>
 
   <div class="card">
@@ -133,7 +161,90 @@ $('bFind').onclick = () => act($('bFind'), $('mConnect'), '/api/discover', null,
     if (r.found.connect_port) $('cport').value = r.found.connect_port; } });
 document.querySelectorAll('[data-svc]').forEach(b => b.onclick = () =>
   act(b, $('mSvc'), '/api/service', { action: b.dataset.svc }));
+// ---- key mapping ----
+const LABELS = { KEY_UP:'Up', KEY_DOWN:'Down', KEY_LEFT:'Left', KEY_RIGHT:'Right', KEY_SELECT:'OK',
+  KEY_BACK:'Back', KEY_EXIT:'Exit', KEY_STOPCD:'Red', KEY_EJECTCD:'Green', KEY_SHUFFLE:'Yellow',
+  KEY_SEARCH:'Blue', KEY_CHANNELUP:'Channel +', KEY_CHANNELDOWN:'Channel -', KEY_FIND:'TTX?',
+  KEY_HOMEPAGE:'Home', KEY_VOLUMEUP:'Volume +', KEY_VOLUMEDOWN:'Volume -', KEY_MUTE:'Mute',
+  KEY_POWER:'Power (cannot be mapped to a power action)' };
+let rows = {};           // remote key -> { tap, long, hold }
+const KEYRE = /^KEY_[A-Z0-9_]+$/;
+
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag); Object.assign(n, props || {});
+  kids.forEach(k => n.append(k)); return n;
+}
+function field(labelText, value, placeholder, onInput, extra) {
+  const i = el('input', Object.assign({ value: value || '', placeholder, autocomplete: 'off',
+    autocapitalize: 'characters' }, extra || {}));
+  i.oninput = () => onInput(i.value);
+  return el('div', {}, el('label', { textContent: labelText }), i);
+}
+function renderRows() {
+  const box = $('rows'); box.textContent = '';
+  Object.keys(rows).forEach(key => {
+    const r = rows[key];
+    const head = el('div', { className: 'rowhead' },
+      el('span', {}, key, el('small', { textContent: LABELS[key] ? LABELS[key] : '' })));
+    const del = el('button', { className: 'x', textContent: '×', title: 'Remove' });
+    del.onclick = () => { delete rows[key]; renderRows(); };
+    head.append(del);
+    const tap = field('Tap', r.tap, 'e.g. KEY_ENTER', v => { r.tap = v.trim(); });
+    tap.querySelector('input').setAttribute('list', 'names');
+    const lng = field('Long press', r.long, 'e.g. KEY_LEFTALT+KEY_F4', v => { r.long = v.trim(); });
+    lng.querySelector('input').setAttribute('list', 'names');
+    const hold = field('Hold (s)', r.hold, '3', v => { r.hold = v.trim(); },
+      { type: 'number', step: '0.1', min: '0.3', max: '10', inputMode: 'decimal' });
+    const g = el('div', { className: 'grid' }, lng, hold);
+    box.append(el('div', { className: 'rowcard' }, head, tap, g));
+  });
+  if (!Object.keys(rows).length) box.append(el('div', { className: 'hint', textContent: 'No keys mapped.' }));
+}
+function addRow(key, spec) {
+  if (!rows[key]) rows[key] = spec || { tap: '', long: '', hold: '' };
+  renderRows();
+}
+async function loadMap() {
+  try {
+    const r = await api('/api/keymap');
+    rows = {};
+    Object.keys(r.keys).forEach(k => { const s = r.keys[k];
+      rows[k] = { tap: s.tap || '', long: s.long || '', hold: s.hold === undefined ? '' : String(s.hold) }; });
+    const dl = $('names'); dl.textContent = '';
+    r.key_names.forEach(n => dl.append(el('option', { value: n })));
+    renderRows();
+    $('mMap').textContent = r.source === 'file' ? '' : 'Showing the built-in defaults (nothing saved yet).';
+    $('mMap').className = 'msg';
+  } catch (e) { $('mMap').textContent = e.message; $('mMap').className = 'msg warn'; }
+}
+async function pollRecent() {
+  try {
+    const r = await api('/api/recent'); const box = $('recent'); box.textContent = '';
+    if (!r.keys.length) { box.append(el('span', { className: 'hint', textContent: 'no keys seen in the last 90 s' })); return; }
+    r.keys.forEach(k => {
+      const c = el('button', { className: 'chip', textContent: LABELS[k] ? `${k} · ${LABELS[k]}` : k });
+      c.onclick = () => { addRow(k); document.querySelectorAll('.rowcard').forEach(n => {
+        if (n.textContent.startsWith(k)) n.scrollIntoView({ behavior: 'smooth', block: 'center' }); }); };
+      box.append(c);
+    });
+  } catch (e) {}
+}
+$('bAddNum').onclick = () => { for (let i = 0; i <= 9; i++) addRow('KEY_' + i, { tap: 'KEY_' + i, long: '', hold: '' });
+  $('mMap').textContent = 'Number rows added (they send the same digit). If the remote reports numbers under other names, press them and add what shows up above.'; $('mMap').className = 'msg'; };
+$('bAddKey').onclick = () => { const k = (prompt('Remote key name, e.g. KEY_8') || '').trim().toUpperCase();
+  if (k && KEYRE.test(k)) addRow(k); else if (k) alert('Use a name like KEY_8'); };
+$('bSave').onclick = () => {
+  const keys = {};
+  Object.keys(rows).forEach(k => { const r = rows[k]; const item = {};
+    if (r.tap) item.tap = r.tap; if (r.long) { item.long = r.long; if (r.hold !== '') item.hold = parseFloat(r.hold); }
+    if (item.tap || item.long) keys[k] = item; });
+  act($('bSave'), $('mMap'), '/api/keymap', { keys });
+};
+$('bReset').onclick = () => { if (confirm('Discard your mapping and go back to the defaults?'))
+  act($('bReset'), $('mMap'), '/api/keymap/reset', {}, loadMap); };
+
 refresh(); setInterval(refresh, 3000);
+loadMap(); pollRecent(); setInterval(pollRecent, 2500);
 </script>
 </body>
 </html>

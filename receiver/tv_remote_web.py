@@ -20,12 +20,16 @@ import os
 import re
 import secrets
 import subprocess
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import tv_remote as core  # noqa: E402  (validation and defaults shared with the receiver)
+
 STATE_DIR = Path(os.environ.get("CEC_STATE_DIR", Path.home() / "cec-over-lan"))
 ENV_FILE = STATE_DIR / "tv-remote.env"
 TOKEN_FILE = STATE_DIR / "token"
@@ -156,7 +160,89 @@ def do_service(data):
     return {"ok": rc == 0, "message": out or action + " done"}
 
 
-POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service}
+KEYMAP_FILE = Path(os.environ.get("CEC_KEYMAP", core.KEYMAP_FILE))
+SEEN = re.compile(r"^\[seen\] (KEY_[A-Z0-9_]+) DOWN$")
+
+
+def key_names():
+    """Names a key can be mapped to (datalist in the page)."""
+    if core.e is not None:
+        names = set()
+        for value in core.e.keys.values():
+            for n in (value if isinstance(value, (list, tuple)) else [value]):
+                if n.startswith("KEY_") and core.valid_target(n):
+                    names.add(n)
+        return sorted(names)
+    base = [f"KEY_{c}" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"]
+    return sorted(set(base) | {"KEY_ENTER", "KEY_ESC", "KEY_BACKSPACE", "KEY_TAB", "KEY_SPACE",
+                               "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_HOMEPAGE"})
+
+
+def to_file_format(entries):
+    out = {}
+    for key, spec in entries.items():
+        item = {}
+        if spec["tap"]:
+            item["tap"] = "+".join(spec["tap"])
+        if spec["long"]:
+            item["long"] = "+".join(spec["long"])
+            item["hold"] = spec["hold"]
+        out[key] = item
+    return out
+
+
+def get_keymap():
+    defaults = core.default_keymap()
+    source, keys = "defaults", defaults
+    try:
+        keys = json.loads(KEYMAP_FILE.read_text())["keys"]
+        source = "file"
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return {"ok": True, "source": source, "keys": keys, "defaults": defaults,
+            "key_names": key_names()}
+
+
+def do_keymap(data):
+    raw = data.get("keys")
+    if not isinstance(raw, dict) or len(raw) > 200:
+        return {"ok": False, "message": "invalid mapping"}
+    entries, errors = core.normalise(raw)
+    if errors:
+        return {"ok": False, "message": "; ".join(errors[:5])}
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = KEYMAP_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"version": 1, "keys": to_file_format(entries)}, f, indent=2)
+    os.replace(tmp, KEYMAP_FILE)
+    return {"ok": True, "message": f"saved {len(entries)} keys (applied within a second)"}
+
+
+def do_keymap_reset(_data):
+    try:
+        KEYMAP_FILE.unlink()
+    except FileNotFoundError:
+        pass
+    return {"ok": True, "message": "back to the built-in defaults"}
+
+
+def recent():
+    """Remote keys the receiver saw in the last 90 s, newest first."""
+    _, journal = run(["journalctl", "--user", "-u", SERVICE, "--since", "-90s", "-o", "cat",
+                      "--no-pager"], 5)
+    seen = []
+    for line in reversed(journal.splitlines()):
+        m = SEEN.match(line.strip())
+        if m and m.group(1) not in seen:
+            seen.append(m.group(1))
+    return {"ok": True, "keys": seen[:12]}
+
+
+POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service,
+        "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset}
+GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
+       "/api/recent": recent}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -192,10 +278,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             return self._send(200, (HERE / "web" / "index.html").read_bytes(),
                               "text/html; charset=utf-8")
-        if path in ("/api/status", "/api/discover"):
+        if path in GET:
             if not self._authed():
                 return self._send(401, {"ok": False, "message": "bad token"})
-            return self._send(200, status() if path == "/api/status" else discover())
+            return self._send(200, GET[path]())
         self._send(404, {"ok": False, "message": "not found"})
 
     def do_POST(self):
@@ -207,7 +293,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authed():
             return self._send(401, {"ok": False, "message": "bad token"})
         try:
-            length = min(int(self.headers.get("Content-Length", "0")), 4096)
+            length = min(int(self.headers.get("Content-Length", "0")), 65536)
             data = json.loads(self.rfile.read(length) or b"{}")
             if not isinstance(data, dict):
                 raise ValueError

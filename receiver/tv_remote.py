@@ -6,64 +6,182 @@ Reads the key presses of a Google TV remote through
 into a uinput device, but ONLY while the TV is actually showing this machine
 (the active CEC routing path equals the HDMI port the machine is plugged into).
 
+The key mapping lives in a JSON file (default ~/cec-over-lan/keymap.json) that
+is reloaded automatically when it changes; the web UI edits it. Without that
+file the built-in default mapping is used.
+
 Usage:
   tv_remote.py --target <IP:port> --dry-run     # print only, inject nothing
   tv_remote.py --target <IP:port>               # inject, only while the TV shows this machine
   tv_remote.py --target <IP:port> --no-gate     # always inject (no source check)
+
+keymap.json format:
+  {"version": 1, "keys": {
+      "KEY_SELECT":  {"tap": "KEY_ENTER"},
+      "KEY_EJECTCD": {"long": "KEY_LEFTALT+KEY_F4", "hold": 3.0},
+      "KEY_8":       {"tap": "KEY_8", "long": "KEY_LEFTCTRL+KEY_8", "hold": 1.0}}}
+  "tap": key or "+"-joined combo, pressed on DOWN and released on UP (or clicked
+         on release when a "long" action also exists and the hold time was not reached).
+  "long": combo fired once after "hold" seconds (default 3).
 """
 import argparse
+import json
+import os
 import re
 import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 LINE = re.compile(r"/dev/input/event\d+:\s+EV_KEY\s+(KEY_\w+)\s+(DOWN|UP)\b")
 PATH = re.compile(r"mActiveRoutingPath:\s*(0x[0-9a-fA-F]+)")
-LONG_PRESS_S = 3.0
+KEY_NAME = re.compile(r"^KEY_[A-Z0-9_]+$")
+STATE_DIR = Path(os.environ.get("CEC_STATE_DIR", Path.home() / "cec-over-lan"))
+KEYMAP_FILE = STATE_DIR / "keymap.json"
+DEFAULT_HOLD = 3.0
+# never injectable: they would suspend/power off the machine
+DENY_TARGETS = {"KEY_POWER", "KEY_SLEEP", "KEY_SUSPEND", "KEY_RESTART", "KEY_WAKEUP",
+                "KEY_POWER2", "KEY_COFFEE"}
 
 try:
     from evdev import UInput, ecodes as e
-except ImportError:  # lets --dry-run work without evdev
+except ImportError:  # lets --dry-run and the web UI work without evdev
     UInput = None
     e = None
 
 
-def build_maps(back_key):
-    """TV key -> injected key (evdev names)."""
-    simple = {
-        "KEY_UP": "KEY_UP",
-        "KEY_DOWN": "KEY_DOWN",
-        "KEY_LEFT": "KEY_LEFT",
-        "KEY_RIGHT": "KEY_RIGHT",
-        "KEY_SELECT": "KEY_ENTER",
-        "KEY_BACK": back_key,
-        "KEY_CHANNELUP": "KEY_NEXTSONG",
-        "KEY_CHANNELDOWN": "KEY_PREVIOUSSONG",
-        "KEY_SEARCH": "KEY_PLAYPAUSE",
-        "KEY_STOPCD": "KEY_HOMEPAGE",
-        "KEY_SHUFFLE": "KEY_LEFTMETA",  # tap = GNOME overview (overlay-key 'Super')
+def valid_key(name):
+    return isinstance(name, str) and bool(KEY_NAME.match(name)) and (e is None or hasattr(e, name))
+
+
+def valid_target(name):
+    return valid_key(name) and name not in DENY_TARGETS
+
+
+def parse_combo(text):
+    """'KEY_LEFTALT+KEY_F4' -> ['KEY_LEFTALT', 'KEY_F4'], or None if invalid/empty."""
+    if not isinstance(text, str):
+        return None
+    names = [p.strip() for p in text.split("+") if p.strip()]
+    if not names or len(names) > 4 or not all(valid_target(n) for n in names):
+        return None
+    return names
+
+
+def default_keymap(back_key="KEY_BACKSPACE"):
+    return {
+        "KEY_UP": {"tap": "KEY_UP"},
+        "KEY_DOWN": {"tap": "KEY_DOWN"},
+        "KEY_LEFT": {"tap": "KEY_LEFT"},
+        "KEY_RIGHT": {"tap": "KEY_RIGHT"},
+        "KEY_SELECT": {"tap": "KEY_ENTER"},
+        "KEY_BACK": {"tap": back_key},
+        "KEY_CHANNELUP": {"tap": "KEY_NEXTSONG"},
+        "KEY_CHANNELDOWN": {"tap": "KEY_PREVIOUSSONG"},
+        "KEY_SEARCH": {"tap": "KEY_PLAYPAUSE"},
+        "KEY_STOPCD": {"tap": "KEY_HOMEPAGE"},
+        # tap = GNOME overview (overlay-key 'Super')
+        "KEY_SHUFFLE": {"tap": "KEY_LEFTMETA"},
+        "KEY_EJECTCD": {"long": "KEY_LEFTALT+KEY_F4", "hold": DEFAULT_HOLD},
     }
-    # TV key -> key combination, fired only after a long press
-    long_combo = {"KEY_EJECTCD": ["KEY_LEFTALT", "KEY_F4"]}
-    return simple, long_combo
+
+
+def normalise(raw):
+    """Validate a raw {remote_key: spec} dict; returns (entries, errors)."""
+    entries, errors = {}, []
+    if not isinstance(raw, dict):
+        return entries, ["keys must be an object"]
+    for key, spec in raw.items():
+        if not (isinstance(key, str) and KEY_NAME.match(key)) or not isinstance(spec, dict):
+            errors.append(f"{key}: invalid remote key or spec")
+            continue
+        tap = parse_combo(spec["tap"]) if spec.get("tap") else None
+        long_ = parse_combo(spec["long"]) if spec.get("long") else None
+        if spec.get("tap") and tap is None:
+            errors.append(f"{key}: invalid tap action")
+            continue
+        if spec.get("long") and long_ is None:
+            errors.append(f"{key}: invalid long action")
+            continue
+        try:
+            hold = float(spec.get("hold", DEFAULT_HOLD))
+        except (TypeError, ValueError):
+            errors.append(f"{key}: invalid hold time")
+            continue
+        if not 0.3 <= hold <= 10:
+            errors.append(f"{key}: hold must be between 0.3 and 10 seconds")
+            continue
+        if not (tap or long_):
+            errors.append(f"{key}: no action")
+            continue
+        entries[key] = {"tap": tap, "long": long_, "hold": hold}
+    return entries, errors
+
+
+class Keymap:
+    """Mapping with automatic reload when the JSON file changes."""
+
+    def __init__(self, path, back_key):
+        self.path = Path(path)
+        self.defaults = default_keymap(back_key)
+        self.entries = {}
+        self.mtime = "unset"
+        self.checked = 0.0
+        self.refresh(force=True)
+
+    def refresh(self, force=False):
+        now = time.monotonic()
+        if not force and now - self.checked < 1.0:
+            return
+        self.checked = now
+        try:
+            mtime = self.path.stat().st_mtime
+        except OSError:
+            mtime = None
+        if mtime == self.mtime:
+            return
+        self.mtime = mtime
+        raw = self.defaults
+        if mtime is not None:
+            try:
+                raw = json.loads(self.path.read_text()).get("keys", {})
+            except (OSError, ValueError, AttributeError) as exc:
+                print(f"[keymap] cannot read {self.path}: {exc}; keeping the previous mapping",
+                      flush=True)
+                return
+        entries, errors = normalise(raw)
+        for err in errors:
+            print(f"[keymap] skipped: {err}", flush=True)
+        self.entries = entries
+        print(f"[keymap] loaded {len(entries)} keys from "
+              f"{'file' if mtime is not None else 'defaults'}", flush=True)
+
+    def get(self, key):
+        self.refresh()
+        return self.entries.get(key)
+
+
+def key_codes():
+    """Every KEY_* code, so the mapping can change without recreating the device."""
+    codes = set()
+    for code, name in e.keys.items():
+        names = list(name) if isinstance(name, (list, tuple)) else [name]
+        if code == 0 or any(n in DENY_TARGETS for n in names):
+            continue
+        if any(n.startswith("KEY_") for n in names):
+            codes.add(code)
+    return sorted(codes)
 
 
 class Out:
-    def __init__(self, simple, long_combo, dry_run):
+    def __init__(self, dry_run):
         self.dry = dry_run
-        self.down = set()
-        self.timers = {}
-        self.lock = threading.RLock()
-        names = set(simple.values())
-        for combo in long_combo.values():
-            names.update(combo)
         self.ui = None
         if not dry_run:
             if UInput is None:
                 sys.exit("python-evdev is not available")
-            caps = {e.EV_KEY: sorted(getattr(e, n) for n in names)}
-            self.ui = UInput(caps, name="TV Remote (CEC-Over-LAN)")
+            self.ui = UInput({e.EV_KEY: key_codes()}, name="TV Remote (CEC-Over-LAN)")
 
     def key(self, name, value):
         if self.dry:
@@ -72,38 +190,83 @@ class Out:
         self.ui.write(e.EV_KEY, getattr(e, name), value)
         self.ui.syn()
 
-    def press(self, name):
-        with self.lock:
-            self.down.add(name)
-            self.key(name, 1)
 
-    def release(self, name):
+class Router:
+    """Turns remote key events into injected keys following the keymap."""
+
+    def __init__(self, keymap, out):
+        self.keymap = keymap
+        self.out = out
+        self.lock = threading.RLock()
+        self.holds = {}   # remote key -> injected names currently held down
+        self.timers = {}  # remote key -> pending long-press Timer
+        self.fired = set()  # remote keys whose long action already fired
+
+    def _click(self, names):
+        for n in names:
+            self.out.key(n, 1)
+        for n in reversed(names):
+            self.out.key(n, 0)
+
+    def _fire_long(self, key, names):
         with self.lock:
-            self.down.discard(name)
-            self.key(name, 0)
+            if self.timers.pop(key, None) is not None:
+                self.fired.add(key)
+                self._click(names)
+
+    def on_event(self, key, state, active):
+        print(f"[seen] {key} {state}", flush=True)
+        with self.lock:
+            if state == "UP":
+                self._up(key)
+            elif active:
+                self._down(key)
+
+    def _down(self, key):
+        entry = self.keymap.get(key)
+        if not entry:
+            return
+        self.fired.discard(key)
+        if entry["long"]:
+            t = threading.Timer(entry["hold"], self._fire_long, args=(key, entry["long"]))
+            self.timers[key] = t
+            t.start()
+        elif entry["tap"]:
+            for n in entry["tap"]:
+                self.out.key(n, 1)
+            self.holds[key] = entry["tap"]
+
+    def _up(self, key):
+        t = self.timers.pop(key, None)
+        if t is not None:  # released before the hold time
+            t.cancel()
+            entry = self.keymap.get(key)
+            if entry and entry["tap"]:
+                self._click(entry["tap"])
+        names = self.holds.pop(key, None)
+        if names:
+            for n in reversed(names):
+                self.out.key(n, 0)
+        self.fired.discard(key)
 
     def release_all(self):
         with self.lock:
             for t in self.timers.values():
                 t.cancel()
             self.timers.clear()
-            for n in list(self.down):
-                self.release(n)
-
-    def combo(self, names):
-        with self.lock:
-            for n in names:
-                self.press(n)
-            for n in reversed(names):
-                self.release(n)
+            for names in self.holds.values():
+                for n in reversed(names):
+                    self.out.key(n, 0)
+            self.holds.clear()
+            self.fired.clear()
 
 
 class Gate:
     """Tells whether the TV is showing this machine, from mActiveRoutingPath in hdmi_control."""
 
-    def __init__(self, args, out):
+    def __init__(self, args, router):
         self.args = args
-        self.out = out
+        self.router = router
         self.active = args.no_gate
         self.stop = threading.Event()
         self.fails = 0
@@ -136,32 +299,17 @@ class Gate:
             if now != self.active:
                 self.active = now
                 if not now:
-                    self.out.release_all()
+                    self.router.release_all()
                 print(f"[source] path={path} -> machine on screen: {'yes' if now else 'no'}",
                       flush=True)
             self.stop.wait(self.args.poll)
 
 
-def handle(out, simple, long_combo, key, state):
-    if key in simple:
-        (out.press if state == "DOWN" else out.release)(simple[key])
-    elif key in long_combo:
-        if state == "DOWN":
-            t = threading.Timer(LONG_PRESS_S, out.combo, args=(long_combo[key],))
-            out.timers[key] = t
-            t.start()
-        else:
-            t = out.timers.pop(key, None)
-            if t:
-                t.cancel()
-    else:
-        print(f"[ignored] {key} {state}", flush=True)
-
-
 def run(args):
-    simple, long_combo = build_maps(args.back_key)
-    out = Out(simple, long_combo, args.dry_run)
-    gate = Gate(args, out)
+    keymap = Keymap(args.keymap, args.back_key)
+    out = Out(args.dry_run)
+    router = Router(keymap, out)
+    gate = Gate(args, router)
     current = {"proc": None}
 
     def kill_link():
@@ -191,10 +339,10 @@ def run(args):
             started = time.monotonic()
             for line in proc.stdout:
                 m = LINE.search(line)
-                if m and gate.active:
-                    handle(out, simple, long_combo, m.group(1), m.group(2))
+                if m:
+                    router.on_event(m.group(1), m.group(2), gate.active)
             proc.wait()
-            out.release_all()  # avoid stuck keys if adb drops
+            router.release_all()  # avoid stuck keys if adb drops
             if time.monotonic() - started > 30:
                 delay = 1
             print(f"adb exited (code {proc.returncode}), retrying in {delay}s", flush=True)
@@ -204,7 +352,7 @@ def run(args):
         pass
     finally:
         gate.stop.set()
-        out.release_all()
+        router.release_all()
         if out.ui:
             out.ui.close()
 
@@ -213,7 +361,9 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--target", required=True, help="IP:port of the wireless debugging connection")
     p.add_argument("--dry-run", action="store_true", help="print what would be injected")
-    p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"])
+    p.add_argument("--keymap", default=str(KEYMAP_FILE), help="path of keymap.json")
+    p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"],
+                   help="Back key of the built-in default mapping")
     p.add_argument("--active-path", default="0x1000",
                    help="CEC routing path of the HDMI port of this machine (HDMI 1 = 0x1000)")
     p.add_argument("--poll", type=float, default=1.5, help="seconds between two source checks")

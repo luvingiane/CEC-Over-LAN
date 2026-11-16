@@ -17,6 +17,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T10 systemd unit | PREPARED, NOT INSTALLED |
 | T11 Inject only while the machine is on screen | OK |
 | T12 Pairing web UI | OK (confirmed on a phone; auto-detect unverified) |
+| T13 Editable key mapping | OK (pending the owner's check on the real remote) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -106,6 +107,17 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Not tested:** the mDNS auto-detect button (it found nothing with wireless debugging off; not retried).
 **Risks:** anyone on the LAN who has the token can pair/connect adb and restart the service; the token is stored in `~/cec-over-lan/token` (0600). Do not expose the port to the internet.
 **Outcome:** OK (confirmed by the owner on a phone); auto-detect still unverified.
+
+## T13 — Editable key mapping (web UI)
+**Request:** map the keys from the web UI, numbers included; two more keys pressed by the owner (Exit and TTX) do nothing on the TV in HDMI mode.
+**DONE (service journal):** unmapped keys seen: `KEY_EXIT` (Exit) and `KEY_FIND` (HYPOTHESIS: this is TTX; the log does not say which physical key was pressed), plus a single `KEY_POWER` (the power key).
+**Done:** the mapping is now a file (`~/cec-over-lan/keymap.json`) reloaded by the receiver within a second; per key a **tap** action and/or a **long** action (with a hold time), either one a `+` combo. The web UI has a *Key mapping* card: keys seen in the last 90 s as chips, editable rows, *Add numbers 0–9*, *Add key by name*, *Save*, *Reset to defaults*. Every `KEY_*` code is registered on the uinput device at start so the mapping can change without recreating it. Power-type targets are refused.
+**DONE (tests):** 13 offline unit tests pass (`python3 -m unittest discover -s tests`): validation, tap held between DOWN and UP, combos released in reverse, long press fires once, tap+long on the same key, source-inactive injects nothing, release after source loss, reload and a broken file keeping the previous mapping, key code coverage (numbers present, power absent).
+**DONE (bug found by testing):** `python-evdev` returns some key names as tuples; the first version crashed on them. Fixed in `receiver/tv_remote.py` and `receiver/tv_remote_web.py`.
+**DONE (browser, 375x812):** the page renders without horizontal scroll or console errors; *Add numbers 0–9* adds 10 rows; saving a mapping with `KEY_POWER` as a target is rejected, without `KEY_POWER` it is saved (`keymap.json`, mode 0600, expected content); deployed to the machine, both services `active`, `[keymap] loaded 12 keys from defaults`.
+**Not tested:** pressing the new keys on the real remote after deployment, typing on a real phone, whether this remote sends digits as `KEY_0`–`KEY_9` (earlier a `KEY_8` was seen once, so probably yes: HYPOTHESIS).
+**Default:** `KEY_EXIT` and `KEY_FIND` are not mapped by default; the owner chooses what they do in the UI.
+**Outcome:** OK, pending the owner's check on the real remote.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

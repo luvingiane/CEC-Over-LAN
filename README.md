@@ -24,6 +24,8 @@ Tested on: Debian 13 with GNOME Shell 48.7, a `MiTV_MZTU0` Google TV, a 20 m fib
 | Yellow | `KEY_SHUFFLE` | Super (GNOME overview) |
 | Blue | `KEY_SEARCH` | Play/Pause |
 
+This is only the default: the mapping can be edited from the web UI (below), numbers included.
+
 Volume is left to the TV. The physical Home key reaches `getevent` but is not mapped (the TV uses it to leave the input). Mute and Assistant were not observed.
 
 ## Requirements
@@ -59,7 +61,32 @@ cat ~/cec-over-lan/token          # access token, created on first start (mode 0
 
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 
+### Key mapping
+
+The *Key mapping* card edits `~/cec-over-lan/keymap.json`, which the receiver reloads by itself within a second (no restart):
+
+- Press a key on the remote with the machine on screen: it appears as a chip under the card title; tap it to add a row. *Add numbers 0–9* adds the ten digits.
+- **Tap** is what is pressed on the machine. It can be a combo joined with `+`, e.g. `KEY_LEFTCTRL+KEY_C`.
+- **Long press** fires once after the **hold** time (0.3–10 s, default 3). With only a long action, a short press does nothing; with both, a short press clicks the tap action and a long one fires the long action only.
+- Any `KEY_*` name known to Linux evdev can be a target (518 on the test machine). Power actions (`KEY_POWER`, `KEY_SLEEP`, `KEY_SUSPEND`, `KEY_RESTART`, `KEY_WAKEUP`) are refused on purpose.
+- *Reset to defaults* deletes the file; the built-in mapping above applies again.
+
+File format:
+
+```json
+{"version": 1, "keys": {
+  "KEY_SELECT":  {"tap": "KEY_ENTER"},
+  "KEY_EJECTCD": {"long": "KEY_LEFTALT+KEY_F4", "hold": 3.0},
+  "KEY_8":       {"tap": "KEY_8", "long": "KEY_LEFTCTRL+KEY_8", "hold": 1.0}}}
+```
+
 Security: it answers only to private (RFC 1918) addresses, every API call needs the token, inputs are validated and no shell is used. It is meant for a trusted home LAN: do not forward its port to the internet.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -v    # keymap validation, routing, long press, reload (no TV needed)
+```
 
 ## Roadmap
 

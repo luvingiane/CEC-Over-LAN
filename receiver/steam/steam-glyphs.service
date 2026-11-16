@@ -1,0 +1,17 @@
+# systemd USER unit: keeps the remote's button icons injected into Steam's Big Picture.
+# Install:
+#   cp steam-glyphs.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now steam-glyphs
+# Steam must be started with -cef-enable-debugging (see README, "Steam button icons").
+# Remove the icons:  python3 ~/cec-over-lan/steam/steam_glyphs.py --remove
+[Unit]
+Description=Remote button icons in Steam Big Picture (CEC-Over-LAN)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -B %h/cec-over-lan/steam/steam_glyphs.py --watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

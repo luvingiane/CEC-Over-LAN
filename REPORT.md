@@ -32,6 +32,8 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T25 On-screen keyboard full width, flush bottom | OK (pending the owner's look on the TV) |
 | T26 Phone UI: tabs, drawn remote, binding sheet | OK (pending the owner's use on the phone) |
 | T27 Esc gives the focus back after the dock | OK (pending the owner's check) |
+| T28 Bottom bar invisible on the phone | Fixed and measured; to be seen on the iPhone |
+| T29 Remote button icons in Steam | OK on the Big Picture home; rest to be checked |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -250,6 +252,20 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 **DONE (on the machine):** receiver restarted with `KillMode=process` for that restart only; ES-DE and YouTube TV stayed open.
 **Not verified:** the whole chain with the real remote (Esc pressed on the remote after the dock); a case where several windows are open and the last focused one is not the one on screen.
 **Outcome:** OK, pending the owner's check.
+
+## T28 — Bottom bar invisible on the phone (found from the owner's screenshot)
+**Cause (DONE, measured):** the new navigation bar had the class `bar`, already used by the wizard's progress bar (`height: 8px; overflow: hidden`), so it was 8 px high instead of 55 and its buttons were clipped. My earlier tests checked that the tabs worked but I never looked at the bar in an image. **Fix:** class renamed to `navbar`; `viewport-fit=cover` and a safe-area padding for iPhones. **DONE (browser 375x812):** 55 px high, fixed at the bottom after scrolling, four tabs visible, the last card clear of it. Not verified on the real iPhone after the fix.
+
+## T29 — Remote button icons in Steam's Big Picture
+**Request:** a patch for Steam so that the button icons match the bindings.
+**DONE (on the machine):** Steam is a native Debian install (`~/.steam/debian-installation`); its UI is a web app (`steamui`, key names in `sp.js`). The `.cef-enable-debugging` file did **not** open the debug port; the command-line option `-cef-enable-debugging` (a string found in `steamclient.so` and `chromehtml.so`) does (port 8080, Chrome 126). A launcher run as a transient service killed Steam when the launcher exited; `KillMode=none` fixed it. Steam was shut down with SIGTERM to its client (`steam -shutdown` and `steam://ExitSteam` had no effect).
+**DONE (live DOM):** the hints are `.KeyCap` elements (text in `.Inner`) inside `KeyboardChordGlyph`; the readable class names are stable, the hashed ones are not. Steam was in Italian: the Enter key cap reads **"Invio"**, found only by looking (`--dump`).
+**Done:** `receiver/steam/steam_glyphs.py` (map from the keymap and the remote model + an injected script with a MutationObserver that restores the keys when a binding goes away), `cdp.py` (stdlib DevTools client), `steam-glyphs.service`.
+**DONE (tests):** 83 offline tests pass; the map tests cover Back sent as Esc, colour buttons on F1/F9, the Steam exception winning over others, long presses and combinations skipped, the priority between two buttons on one key, and the Italian "Invio".
+**DONE (real screen, captured from Steam through the debug port):** the footer shows a red **R** for MENU (F1), a blue **B** for OPZIONI (F9), **OK** for SELEZIONA (Invio) and **←** for INDIETRO (Esc).
+**Installed on the machine:** the watcher service (active, 12 glyphs). The owner's own `~/.local/share/applications/steam.desktop` already existed; after a backup (`steam.desktop.bak-20261116-203110`) its main `Exec` and the Big Picture `Exec` got `-cef-enable-debugging`, so Steam keeps the debug port. Revert: restore the backup.
+**Not verified:** the Italian names of the other keys (only Invio is confirmed), other Steam screens than the home footer, a Steam restart from the launcher (the watcher should re-inject), a reboot.
+**Outcome:** OK on the home screen of Big Picture; the rest to be checked by the owner.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

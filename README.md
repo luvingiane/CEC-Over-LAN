@@ -61,6 +61,12 @@ cat ~/cec-over-lan/token          # access token, created on first start (mode 0
 
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 
+### Steam button icons
+
+Steam's Big Picture draws its hints as keyboard keys ("Esc BACK", "Enter SELECT", "F1 MENU") because the remote reaches it as a keyboard. `receiver/steam/steam_glyphs.py` replaces each key cap with the button of the remote that sends that key, according to your mapping: where Back sends `Esc`, "Esc BACK" shows the remote's back arrow; a button bound to `F1` shows its own icon. The per-app exception for `steam` is the one that counts (Steam is the focused app). Only single-key taps are drawn; long presses and combinations have no key cap.
+
+It changes no file of Steam: a script is injected into the running UI through the DevTools port, so **Steam must be started with `-cef-enable-debugging`** (the `.cef-enable-debugging` file is *not* honoured by this Steam; the option is). `steam-glyphs.service` (user unit) re-injects after a Steam restart or a mapping change. `steam_glyphs.py --map` prints the computed map, `--dump` the key caps Steam shows right now (Steam translates some names: in Italian Enter is "Invio"; send the output of `--dump` to add a missing name), `--remove` puts the keyboard keys back. `receiver/steam/cdp.py` is a small standard-library DevTools client (localhost only).
+
 ### The web UI on a phone
 
 The page has four tabs (bottom bar) and a status strip on top (receiver, TV link, machine on screen, DRY RUN):

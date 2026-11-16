@@ -697,6 +697,67 @@ class FocusRestore(unittest.TestCase):
         self.assertEqual(activated, [])
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "receiver" / "steam"))
+import steam_glyphs as sg  # noqa: E402
+
+
+class SteamGlyphs(unittest.TestCase):
+    def buttons(self):
+        import tv_remote_web as web
+        old = web.LEARNED_FILE
+        web.LEARNED_FILE = Path(tempfile.mkdtemp()) / "none.json"
+        try:
+            return web.remote_model()["buttons"]
+        finally:
+            web.LEARNED_FILE = old
+
+    def build(self, raw):
+        entries, errors = core.normalise(raw)
+        self.assertEqual(errors, [])
+        return sg.build_map(entries, self.buttons())
+
+    def test_back_sent_as_esc_shows_the_back_arrow(self):
+        m = self.build({"KEY_BACK": {"tap": "KEY_ESC"}, "KEY_SELECT": {"tap": "KEY_ENTER"}})
+        self.assertEqual(m["Esc"]["label"], "←")
+        self.assertEqual(m["Esc"]["title"], "Back")
+        self.assertEqual(m["Enter"]["label"], "OK")
+
+    def test_translated_key_names_are_covered(self):
+        m = self.build({"KEY_SELECT": {"tap": "KEY_ENTER"}})
+        self.assertEqual(m["Enter"]["label"], m["Invio"]["label"])   # Steam in Italian says "Invio"
+
+    def test_colour_buttons_and_function_keys(self):
+        m = self.build({"KEY_STOPCD": {"tap": "KEY_F1"}, "KEY_EJECTCD": {"tap": "KEY_F9"}})
+        self.assertEqual((m["F1"]["kind"], m["F1"]["color"]), ("col", "red"))
+        self.assertEqual((m["F9"]["kind"], m["F9"]["color"]), ("col", "green"))
+
+    def test_the_exception_for_steam_wins_and_others_are_ignored(self):
+        m = self.build({"KEY_BACK": {"tap": "KEY_ESC", "apps": {"es-de": {"tap": "KEY_BACKSPACE"},
+                                                                   "steam": {"tap": "KEY_F3"}}}})
+        self.assertIn("F3", m)            # while Steam is focused Back sends F3
+        self.assertNotIn("Esc", m)
+        self.assertNotIn("Backspace", m)  # the es-de exception does not apply to Steam
+
+    def test_long_presses_and_combinations_have_no_key_cap(self):
+        m = self.build({"KEY_BACK": {"tap": "KEY_ESC", "long": "KEY_LEFTALT+KEY_F4", "hold": 2},
+                        "KEY_SELECT": {"tap": "KEY_LEFTCTRL+KEY_ENTER"},
+                        "KEY_UP": {"tap": "app:kodi.desktop"}})
+        self.assertEqual(m, {})
+
+    def test_two_buttons_on_the_same_key_the_more_important_wins(self):
+        m = self.build({"KEY_STOPCD": {"tap": "KEY_ESC"}, "KEY_BACK": {"tap": "KEY_ESC"}})
+        self.assertEqual(m["Esc"]["title"], "Back")
+
+    def test_unknown_codes_and_unmapped_keys_are_skipped(self):
+        m = self.build({"KEY_FOO": {"tap": "KEY_ESC"}, "KEY_BACK": {"tap": "KEY_POWER".replace("POWER", "MUTE")}})
+        self.assertEqual(m, {})           # KEY_FOO is not a remote button; KEY_MUTE has no Steam label
+
+    def test_the_injected_script_is_valid_json_around_the_map(self):
+        js = sg.JS.replace("__MAP__", json.dumps({"Esc": {"label": "←", "kind": "round", "color": "", "title": "Back"}}))
+        self.assertIn('"Esc"', js)
+        self.assertNotIn("__MAP__", js)
+
+
 class Actions(unittest.TestCase):
     def test_parse_action_kinds(self):
         self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})

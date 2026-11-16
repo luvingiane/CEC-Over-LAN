@@ -10,7 +10,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T3 getevent, TV on | OK |
 | T4 getevent, standby | NOT TESTED |
 | T5 Keys and UI | PARTIAL |
-| T6 Persistence after reboot | PARTIAL (old port offline; new port not tested yet) |
+| T6 Persistence after reboot | OK (port and pairing do not survive a reboot) |
 | T7 Latency | PARTIAL |
 | T8 uinput device | OK |
 | T9 Mapping | PARTIAL |
@@ -51,8 +51,9 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 ## T6 — adb persistence after reboot
 **DONE:** before the reboot `adb` was connected on port `36465` and the pairing was registered. After the owner rebooted the TV, `adb devices` showed `<TV_IP>:36465 offline` and `adb connect` hung until the timeout.
 **DONE (journal):** the receiver crashed with `subprocess.TimeoutExpired` on `adb connect`; systemd restarted it 9 times. Fixed in `receiver/tv_remote.py` (the timeout is now caught and the connection is retried with backoff).
-**I don't know:** the new wireless debugging port after the reboot, whether the pairing is still valid, whether a new authorisation is needed.
-**Outcome:** PARTIAL. Next: read the new port on the TV (Developer options -> Wireless debugging) and run `adb connect`.
+**DONE:** after the reboot the old port did not answer (`ping` to the TV 2/2 received, TCP connect to the old port timed out, `adb mdns services` found nothing). A new `adb pair` on a new pairing port succeeded (same `guid`, i.e. the same TV and key), then `adb connect` on a new connection port gave `device`. So after a TV reboot **both the connection port and the pairing changed/were lost**: a new pairing and a new port are needed every time.
+**Consequence:** variant A cannot reconnect by itself after a TV reboot; a human has to read the new port and code on the TV. This is the main argument for variant B (an app on the TV that connects out to the machine).
+**Outcome:** OK (answer: the port and the pairing do not survive a reboot).
 
 ## T7 — Latency
 **DONE:** there is no video stream to measure (direct HDMI). The key-path latency (TV -> adb -> VM -> uinput) was **not measured**. The owner reports that the keys work; there is no number.
@@ -92,10 +93,10 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Outcome:** OK.
 
 ## Recommendation (provisional)
-Variant A (no app on the TV) works. Before making it permanent: T6 (port stability) and T4 (standby). If the port changes at every reboot, variant A needs a manual re-pairing or reconnection and variant B becomes preferable.
+Variant A (no app on the TV) works, but T6 showed that after a TV reboot the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.
 
 ## To do
-T4, T6, T10, key-latency measurement, confirm Backspace in ES-DE, Kodi, install the systemd unit.
+T4, T10, key-latency measurement, confirm Backspace in ES-DE, Kodi, install the systemd unit, variant B (APK + AccessibilityService).
 
 ## Proposals
 - Long press for other keys.

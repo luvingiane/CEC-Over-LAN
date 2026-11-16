@@ -58,6 +58,7 @@ cat ~/cec-over-lan/token          # access token, created on first start (mode 0
 ```
 
 <p align="center"><img src="docs/web-ui.png" alt="The pairing web UI on a phone (IP and ports redacted)" width="320"></p>
+more screenshots are coming but interface needs to be unslopped first.
 
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 

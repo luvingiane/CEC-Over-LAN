@@ -163,6 +163,19 @@ def detect_layout():
     return "us"
 
 
+PAD, GAP = 12, 8   # side padding of the window and gap between keys, in pixels
+
+
+def fit_widths(weights, room):
+    """Pixel widths for keys of the given relative weights so that, with GAP pixels between
+    them, the row fills exactly `room` pixels (rows of different length all reach both edges)."""
+    room -= GAP * (len(weights) - 1)
+    total = sum(weights)
+    px = [int(room * w / total) for w in weights]
+    px[-1] += room - sum(px)          # the rounding remainder goes to the last key
+    return px
+
+
 def all_layout_chars():
     return {k[2] for rows in LAYERS.values() for row in rows for k in row if k[1] == "char"}
 
@@ -250,14 +263,17 @@ def main():
     display = Gdk.Display.get_default()
     monitor = display.get_primary_monitor() or display.get_monitor(0)
     geo = monitor.get_geometry()
-    unit = max(34, int(geo.width * 0.66 / 22))
+    room = geo.width - 2 * PAD        # every row is stretched to this width: the keyboard is as wide as the screen
 
-    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-    outer.set_border_width(16)
+    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
+    outer.set_margin_start(PAD)
+    outer.set_margin_end(PAD)
+    outer.set_margin_top(10)
+    outer.set_margin_bottom(0)        # flush with the bottom edge of the screen
     title = Gtk.Label(label=f"OK types  ·  arrows move  ·  Back closes  ·  layout: {layout}")
     title.get_style_context().add_class("title")
     outer.pack_start(title, False, False, 0)
-    board = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    board = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
     outer.pack_start(board, False, False, 0)
     win.add(outer)
     buttons = []
@@ -267,13 +283,14 @@ def main():
             board.remove(child)
         buttons.clear()
         for row in model.rows:
-            box = Gtk.Box(spacing=8)
-            box.set_halign(Gtk.Align.CENTER)
+            box = Gtk.Box(spacing=GAP)
+            box.set_halign(Gtk.Align.FILL)
             line = []
-            for label, kind, _value, width in row:
+            widths = fit_widths([k[3] for k in row], room)
+            for (label, kind, _value, _w), px in zip(row, widths):
                 b = Gtk.Button(label=label)
                 b.set_can_focus(False)
-                b.set_size_request(unit * width, -1)
+                b.set_size_request(px, -1)
                 if kind != "char":
                     b.get_style_context().add_class("mod")
                 box.pack_start(b, False, False, 0)
@@ -312,7 +329,8 @@ def main():
     render()
     win.show_all()
     size = win.get_preferred_size()[1]
-    win.move(geo.x + (geo.width - size.width) // 2, geo.y + geo.height - size.height - 48)
+    win.resize(geo.width, size.height)                              # as wide as the screen
+    win.move(geo.x, geo.y + geo.height - size.height)               # and flush with the bottom edge
     GLib.io_add_watch(sock.fileno(), GLib.IO_IN, on_message)
 
     snapshot = os.environ.get("CEC_OSK_SNAPSHOT")  # diagnostics: save a picture of the window

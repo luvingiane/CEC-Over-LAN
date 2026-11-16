@@ -29,6 +29,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T22 Restart without closing launched apps | OK |
 | T23 Key names people type (Super+S) | Fixed and tested; effect of the shortcut to be confirmed |
 | T24 Dock popping up on remote presses | Fixed in code and tested; to be confirmed on the TV |
+| T25 On-screen keyboard full width, flush bottom | OK (pending the owner's look on the TV) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -220,6 +221,14 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 **DONE (on the machine):** receiver restarted with `KillMode=process` for that restart only (temporary drop-in removed, `KillMode=control-group` again); YouTube TV stayed open (ES-DE had been closed by the owner before the restart).
 **Second case, not changed:** after `Ctrl+Alt+Tab` the dock gets the keyboard focus (`_onAccessibilityFocus` unsets the window focus and shows the dock) and dash-to-dock has no `Escape` handling at all, so `Esc` alone does not return the focus. If that is what the owner means, it needs a separate fix (for example sending a key that returns the focus to a window after `Esc`).
 **Outcome:** fixed in code and tested; to be confirmed on the TV.
+
+## T25 — On-screen keyboard: full width, no border below
+**Request (after trying it on the TV, photo):** the keyboard should have no border below and extend to the width of the TV. The photo also shows that it works: it appears over ES-DE and ES-DE keeps the focus.
+**Done:** the window is as wide as the monitor and flush with its bottom edge (no bottom margin); every row is stretched to both edges by `fit_widths()` (key widths stay proportional, the rounding remainder goes to the last key).
+**DONE (tests):** 63 offline tests pass, including that every row of every layer fills the width exactly for 800, 1712, 1920 and 3840 px, and that a space bar stays four times a letter key.
+**DONE (on the machine):** window 1712x402 at (0, 561) on a 1712x963 screen, so its bottom is at 963, the screen's bottom edge; the focused window is the same before, during and after (ES-DE). Also seen: the window class of ES-DE is `es-de`, which matches the Back exception of T19.
+**Not changed:** a TV with overscan can still hide the last pixels at the edges; that is a TV setting.
+**Outcome:** OK, pending the owner's look on the TV.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

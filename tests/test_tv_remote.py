@@ -477,6 +477,19 @@ class OskModelTests(unittest.TestCase):
         self.assertEqual([c for _, c, v in (ev for ev in t.ui.events if ev != "syn") if v == 1],
                          [e.KEY_LEFTSHIFT, e.KEY_7])
 
+    def test_every_row_fills_the_screen_width_exactly(self):
+        for width in (1712, 1920, 3840, 800):
+            room = width - 2 * osk.PAD
+            for layer, rows in osk.LAYERS.items():
+                for row in rows:
+                    px = osk.fit_widths([k[3] for k in row], room)
+                    self.assertEqual(sum(px) + osk.GAP * (len(row) - 1), room, (width, layer))
+                    self.assertTrue(all(p > 0 for p in px))
+
+    def test_key_widths_stay_proportional(self):
+        px = osk.fit_widths([2, 2, 8], 1000)          # a "space bar" is four times a letter key
+        self.assertAlmostEqual(px[2] / px[0], 4, delta=0.2)
+
     def test_layout_can_be_forced(self):
         import os
         os.environ["CEC_OSK_LAYOUT"] = "us"

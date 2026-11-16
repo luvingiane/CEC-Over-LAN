@@ -1,55 +1,55 @@
 # CEC-Over-LAN
 
-Usa il telecomando fisico di una Google TV come dispositivo di input di una VM Linux collegata alla TV via HDMI, quando l'HDMI-CEC non porta i tasti: i tasti viaggiano sulla LAN (adb) e il receiver li inietta solo quando la TV sta mostrando la VM.
+Use the physical remote of a Google TV as an input device for a Linux VM (or PC) connected to the TV over HDMI, when HDMI-CEC does not carry the keys: the key presses travel over the LAN (adb) and the receiver injects them only while the TV is showing the machine.
 
-Come funziona (variante A, nessuna app sulla TV):
+How it works (variant A, no app on the TV):
 
-1. La VM si collega alla TV con `adb` (debug wireless, pairing una tantum).
-2. `receiver/tv_remote.py` legge `adb shell getevent -l`, traduce i tasti e li re-inietta in un device `uinput` ("TV Remote (vm170)").
-3. La VM vede una normale tastiera: ES-DE, Kodi e GNOME reagiscono.
-4. Ogni 1,5 s il receiver legge `mActiveRoutingPath` da `dumpsys hdmi_control`: inietta solo se la TV mostra la porta HDMI della VM (`0x1000` = HDMI 1, configurabile con `--active-path`). Se usi la TV per altro, i tasti non arrivano alla VM.
+1. The machine connects to the TV with `adb` (wireless debugging, one-time pairing).
+2. `receiver/tv_remote.py` reads `adb shell getevent -l`, translates the keys and re-injects them into a `uinput` device ("TV Remote (CEC-Over-LAN)").
+3. The machine sees a normal keyboard: ES-DE, Kodi and GNOME react to it.
+4. Every 1.5 s the receiver reads `mActiveRoutingPath` from `dumpsys hdmi_control` and injects only if the TV is showing the machine's HDMI port (`0x1000` = HDMI 1, configurable with `--active-path`). When you use the TV for anything else, no key reaches the machine.
 
-Provato su: Debian 13 con GNOME Shell 48.7, TV `MiTV_MZTU0` (Google TV), cavo HDMI in fibra. Il report completo dei test è in [REPORT.md](REPORT.md).
+Tested on: Debian 13 with GNOME Shell 48.7, a `MiTV_MZTU0` Google TV, a 20 m fibre-optic HDMI cable. The full test report is in [REPORT.md](REPORT.md).
 
-## Mappatura predefinita
+## Default mapping
 
-| Telecomando | Evento letto | La VM inietta |
+| Remote | Event read | Injected on the machine |
 |---|---|---|
-| Frecce | `KEY_UP/DOWN/LEFT/RIGHT` | frecce |
-| OK | `KEY_SELECT` | Invio |
-| Indietro | `KEY_BACK` | Backspace |
-| Canale su / giù | `KEY_CHANNELUP/DOWN` | media avanti / indietro |
-| Rosso | `KEY_STOPCD` | Home (`KEY_HOMEPAGE`) |
-| Verde (3 s) | `KEY_EJECTCD` | Alt+F4 |
-| Giallo | `KEY_SHUFFLE` | Super (panoramica GNOME) |
-| Blu | `KEY_SEARCH` | Play/Pausa |
+| Arrows | `KEY_UP/DOWN/LEFT/RIGHT` | arrows |
+| OK | `KEY_SELECT` | Enter |
+| Back | `KEY_BACK` | Backspace |
+| Channel up / down | `KEY_CHANNELUP/DOWN` | next / previous media |
+| Red | `KEY_STOPCD` | Home (`KEY_HOMEPAGE`) |
+| Green (hold 3 s) | `KEY_EJECTCD` | Alt+F4 |
+| Yellow | `KEY_SHUFFLE` | Super (GNOME overview) |
+| Blue | `KEY_SEARCH` | Play/Pause |
 
-Il volume resta alla TV. Il tasto Home fisico arriva a `getevent` ma non è mappato (la TV lo usa per uscire dall'ingresso). Mute e Assistant non sono stati osservati.
+Volume is left to the TV. The physical Home key reaches `getevent` but is not mapped (the TV uses it to leave the input). Mute and Assistant were not observed.
 
-## Requisiti
+## Requirements
 
-- Sulla TV: Opzioni sviluppatore e Debug wireless attivi, abilitati a mano dal proprietario.
-- Sulla VM: `adb` (`android-tools-adb`), Python 3 con `python-evdev`, accesso in scrittura a `/dev/uinput` (qui via ACL).
+- On the TV: Developer options and Wireless debugging enabled, by hand, by the owner.
+- On the machine: `adb` (`android-tools-adb`), Python 3 with `python-evdev`, write access to `/dev/uinput` (via an ACL here).
 
-## Uso
+## Usage
 
 ```bash
-adb pair <IP_TV>:<PORTA_PAIRING> <CODICE>      # una volta sola
-adb connect <IP_TV>:<PORTA>
-python3 receiver/tv_remote.py --target <IP_TV>:<PORTA> --dry-run   # stampa e basta
-python3 receiver/tv_remote.py --target <IP_TV>:<PORTA>             # inietta davvero, solo con la VM sullo schermo
-python3 receiver/tv_remote.py --target <IP_TV>:<PORTA> --no-gate   # inietta sempre
+adb pair <TV_IP>:<PAIRING_PORT> <CODE>      # once
+adb connect <TV_IP>:<PORT>
+python3 receiver/tv_remote.py --target <TV_IP>:<PORT> --dry-run   # print only
+python3 receiver/tv_remote.py --target <TV_IP>:<PORT>             # inject, only while the machine is on screen
+python3 receiver/tv_remote.py --target <TV_IP>:<PORT> --no-gate   # always inject
 ```
 
-Come servizio: vedi `receiver/tv-remote.service` (unità utente, `Restart=always`).
+As a service: see `receiver/tv-remote.service` (user unit, `Restart=always`).
 
-## Limiti noti
+## Known limits
 
-- La porta del Debug wireless può cambiare: dopo un riavvio della TV può servire un nuovo `adb connect`. Non verificato, vedi T6 in REPORT.md.
-- Comportamento con la TV in standby non verificato (T4).
-- Latenza dei tasti non misurata.
+- The wireless debugging port can change: after a TV reboot the old port was `offline` (see T6 in REPORT.md), so a new `adb connect` is needed.
+- Behaviour with the TV in standby is not verified (T4).
+- Key latency is not measured.
 
-## Altri file
+## Other files
 
-- `RULES.md`, `PROMPT.md`: regole e compito dati all'agente che ha condotto i test.
-- `STATO.md`: stato dei test.
+- `RULES.md`, `PROMPT.md`: the rules and the task given to the agent that ran the tests.
+- `STATUS.md`: test status.

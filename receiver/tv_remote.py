@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Receiver per la VM: legge i tasti del telecomando Google TV via
-`adb shell getevent -l` (variante A) e li re-inietta in un device uinput,
-ma SOLO quando la TV sta mostrando la VM (percorso CEC attivo = quello della
-porta HDMI a cui e' collegata la VM).
+"""CEC-Over-LAN receiver for a Linux VM/PC.
 
-Uso:
-  tv_remote.py --target <IP:porta> --dry-run     # stampa soltanto, non inietta
-  tv_remote.py --target <IP:porta>               # inietta davvero
-  tv_remote.py --target <IP:porta> --no-gate     # inietta sempre (senza controllo sorgente)
+Reads the key presses of a Google TV remote through
+`adb shell getevent -l` ("variant A", no app on the TV) and re-injects them
+into a uinput device, but ONLY while the TV is actually showing this machine
+(the active CEC routing path equals the HDMI port the machine is plugged into).
+
+Usage:
+  tv_remote.py --target <IP:port> --dry-run     # print only, inject nothing
+  tv_remote.py --target <IP:port>               # inject, only while the TV shows this machine
+  tv_remote.py --target <IP:port> --no-gate     # always inject (no source check)
 """
 import argparse
 import re
@@ -22,13 +24,13 @@ LONG_PRESS_S = 3.0
 
 try:
     from evdev import UInput, ecodes as e
-except ImportError:  # permette --dry-run senza evdev
+except ImportError:  # lets --dry-run work without evdev
     UInput = None
     e = None
 
 
 def build_maps(back_key):
-    """tasto TV -> tasto iniettato (nomi evdev)."""
+    """TV key -> injected key (evdev names)."""
     simple = {
         "KEY_UP": "KEY_UP",
         "KEY_DOWN": "KEY_DOWN",
@@ -40,9 +42,9 @@ def build_maps(back_key):
         "KEY_CHANNELDOWN": "KEY_PREVIOUSSONG",
         "KEY_SEARCH": "KEY_PLAYPAUSE",
         "KEY_STOPCD": "KEY_HOMEPAGE",
-        "KEY_SHUFFLE": "KEY_LEFTMETA",  # tocco = panoramica GNOME (overlay-key 'Super')
+        "KEY_SHUFFLE": "KEY_LEFTMETA",  # tap = GNOME overview (overlay-key 'Super')
     }
-    # tasto TV -> combinazione, scatta solo dopo pressione lunga
+    # TV key -> key combination, fired only after a long press
     long_combo = {"KEY_EJECTCD": ["KEY_LEFTALT", "KEY_F4"]}
     return simple, long_combo
 
@@ -59,9 +61,9 @@ class Out:
         self.ui = None
         if not dry_run:
             if UInput is None:
-                sys.exit("python-evdev non disponibile")
+                sys.exit("python-evdev is not available")
             caps = {e.EV_KEY: sorted(getattr(e, n) for n in names)}
-            self.ui = UInput(caps, name="TV Remote (vm170)")
+            self.ui = UInput(caps, name="TV Remote (CEC-Over-LAN)")
 
     def key(self, name, value):
         if self.dry:
@@ -97,7 +99,7 @@ class Out:
 
 
 class Gate:
-    """Dice se la TV sta mostrando la VM, leggendo mActiveRoutingPath da hdmi_control."""
+    """Tells whether the TV is showing this machine, from mActiveRoutingPath in hdmi_control."""
 
     def __init__(self, args, out):
         self.args = args
@@ -120,12 +122,12 @@ class Gate:
         want = self.args.active_path.lower()
         while not self.stop.is_set():
             path = self.read_path()
-            now = path == want  # se la lettura fallisce (None) -> non iniettare
+            now = path == want  # if the read fails (None) -> do not inject
             if now != self.active:
                 self.active = now
                 if not now:
                     self.out.release_all()
-                print(f"[sorgente] percorso={path} -> VM sullo schermo: {'si' if now else 'no'}",
+                print(f"[source] path={path} -> machine on screen: {'yes' if now else 'no'}",
                       flush=True)
             self.stop.wait(self.args.poll)
 
@@ -143,7 +145,7 @@ def handle(out, simple, long_combo, key, state):
             if t:
                 t.cancel()
     else:
-        print(f"[ignorato] {key} {state}", flush=True)
+        print(f"[ignored] {key} {state}", flush=True)
 
 
 def run(args):
@@ -155,7 +157,13 @@ def run(args):
     delay = 1
     try:
         while True:
-            subprocess.run(["adb", "connect", args.target], capture_output=True, timeout=15)
+            try:
+                subprocess.run(["adb", "connect", args.target], capture_output=True, timeout=15)
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                print(f"adb connect failed ({type(exc).__name__}), retrying in {delay}s", flush=True)
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
             proc = subprocess.Popen(
                 ["adb", "-s", args.target, "shell", "getevent", "-l"],
                 stdout=subprocess.PIPE, text=True, bufsize=1)
@@ -165,10 +173,10 @@ def run(args):
                 if m and gate.active:
                     handle(out, simple, long_combo, m.group(1), m.group(2))
             proc.wait()
-            out.release_all()  # evita tasti incastrati se adb cade
+            out.release_all()  # avoid stuck keys if adb drops
             if time.monotonic() - started > 30:
                 delay = 1
-            print(f"adb terminato (codice {proc.returncode}), riprovo tra {delay}s", flush=True)
+            print(f"adb exited (code {proc.returncode}), retrying in {delay}s", flush=True)
             time.sleep(delay)
             delay = min(delay * 2, 30)
     except KeyboardInterrupt:
@@ -182,11 +190,11 @@ def run(args):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--target", required=True, help="IP:porta del debug wireless")
-    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--target", required=True, help="IP:port of the wireless debugging connection")
+    p.add_argument("--dry-run", action="store_true", help="print what would be injected")
     p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"])
     p.add_argument("--active-path", default="0x1000",
-                   help="percorso CEC della porta HDMI della VM (HDMI 1 = 0x1000)")
-    p.add_argument("--poll", type=float, default=1.5, help="secondi tra due controlli sorgente")
-    p.add_argument("--no-gate", action="store_true", help="inietta sempre")
+                   help="CEC routing path of the HDMI port of this machine (HDMI 1 = 0x1000)")
+    p.add_argument("--poll", type=float, default=1.5, help="seconds between two source checks")
+    p.add_argument("--no-gate", action="store_true", help="always inject")
     run(p.parse_args())

@@ -1,99 +1,103 @@
-# REPORT.md — telecomando Google TV come input della VM 170
+# REPORT.md — Google TV remote as input for a Linux VM
 
-Data: 2026-11-16. TV: modello `MiTV_MZTU0` (codename `river`). Indirizzi: `<IP_TV>`, `<IP_VM>`.
-Marcatura: FATTO = comando + output reale; IPOTESI = non provato.
+Date: 2026-11-16. TV: model `MiTV_MZTU0` (codename `river`). Addresses: `<TV_IP>`, `<VM_IP>`.
+Marking: DONE = command + real output; HYPOTHESIS = not proven.
 
-| Test | Esito |
+| Test | Outcome |
 |---|---|
-| T1 Streaming video | OK |
-| T2 adb dalla VM | OK |
-| T3 getevent, TV accesa | OK |
-| T4 getevent, standby | NON PROVATO |
-| T5 Tasti e UI | PARZIALE |
-| T6 Persistenza dopo reboot | NON PROVATO |
-| T7 Latenza | PARZIALE |
-| T8 Device uinput | OK |
-| T9 Mappatura | PARZIALE |
-| T10 Unità systemd | PREPARATA, NON INSTALLATA |
-| T11 Iniezione solo con la VM sullo schermo | OK |
+| T1 Video streaming | OK |
+| T2 adb from the VM | OK |
+| T3 getevent, TV on | OK |
+| T4 getevent, standby | NOT TESTED |
+| T5 Keys and UI | PARTIAL |
+| T6 Persistence after reboot | PARTIAL (old port offline; new port not tested yet) |
+| T7 Latency | PARTIAL |
+| T8 uinput device | OK |
+| T9 Mapping | PARTIAL |
+| T10 systemd unit | PREPARED, NOT INSTALLED |
+| T11 Inject only while the machine is on screen | OK |
 
-## T1 — Come arriva il video della VM alla TV
-**Comando:** domanda al proprietario.
-**Output reale:** "HDMI da 20mt in FO" (cavo HDMI in fibra ottica, 20 m).
-**Esito:** OK. FATTO: il video arriva in HDMI diretto, senza streaming. L'app in primo piano è l'ingresso HDMI, quindi non c'è un'app che inoltri i tasti alla VM: **il sender serve** (D1 chiuso).
-**IPOTESI:** HDMI-CEC come via di inoltro dei tasti non è stato verificato: dipende dalla scheda video della VM e dal cavo in fibra.
-**Rischi:** nessuno.
+## T1 — How the VM's video reaches the TV
+**Command:** question to the owner.
+**Real output:** "20 m HDMI over fibre" (fibre-optic HDMI cable, 20 m).
+**Outcome:** OK. DONE: the video arrives over direct HDMI, no streaming. The foreground app is the TV's HDMI input, so no app can forward the keys to the VM: **the sender is needed** (D1 closed).
+**HYPOTHESIS:** HDMI-CEC as a way to forward the keys was not verified: it depends on the VM's graphics card and on the fibre cable.
+**Risks:** none.
 
-## T2 — adb raggiungibile dalla VM
-**Comando:** `adb pair <IP_TV>:<porta_pairing> <codice>`, `adb connect <IP_TV>:<porta>`, `adb devices -l` (eseguiti sulla VM).
-**Output reale:** `Successfully paired to ...`, `connected to ...`, `device product:river model:MiTV_MZTU0 device:river`.
-**Esito:** OK. FATTO.
-**Rischi:** la VM ora ha una chiave ADB autorizzata sulla TV. Si revoca dalle Opzioni sviluppatore della TV ("Revoca autorizzazioni debug"). Il debug wireless è raggiungibile dalla LAN finché è attivo.
+## T2 — adb reachable from the VM
+**Command:** `adb pair <TV_IP>:<pairing_port> <code>`, `adb connect <TV_IP>:<port>`, `adb devices -l` (run on the VM).
+**Real output:** `Successfully paired to ...`, `connected to ...`, `device product:river model:MiTV_MZTU0 device:river`.
+**Outcome:** OK. DONE.
+**Risks:** the VM now has an ADB key authorised on the TV. It is revoked in the TV's Developer options ("Revoke USB debugging authorisations"). Wireless debugging is reachable from the LAN while it is enabled.
 
-## T3 — getevent con TV accesa
-**Comandi:** `adb shell ls -l /dev/input`, `adb shell cat /proc/bus/input/devices`, `adb shell getevent -p`, `adb shell getevent -lt` (20 s).
-**Output reale:** 5 device (`event0`–`event4`); `/proc/bus/input/devices` negato all'utente `shell` ("Permission denied"); `getevent -p` mostra i nomi: "Xiaomi RC Keyboard" (event4), "Xiaomi RC Consumer Control" (event3), "MTK PMU WOBT", "MTK Smart TV IR Receiver", "MTK TV KEYPAD". Gli eventi dei tasti sono arrivati tutti da `event3`.
-**Esito:** OK. FATTO.
-**Nota:** questa versione di `getevent` accetta un solo device alla volta; senza argomento li legge tutti.
-**Rischi:** solo lettura.
+## T3 — getevent with the TV on
+**Commands:** `adb shell ls -l /dev/input`, `adb shell cat /proc/bus/input/devices`, `adb shell getevent -p`, `adb shell getevent -lt` (20 s).
+**Real output:** 5 devices (`event0`–`event4`); `/proc/bus/input/devices` denied to the `shell` user ("Permission denied"); `getevent -p` shows the names: "Xiaomi RC Keyboard" (event4), "Xiaomi RC Consumer Control" (event3), "MTK PMU WOBT", "MTK Smart TV IR Receiver", "MTK TV KEYPAD". The key events all arrived from `event3`.
+**Outcome:** OK. DONE.
+**Note:** this version of `getevent` accepts a single device at a time; without an argument it reads all of them.
+**Risks:** read-only.
 
 ## T4 — getevent in standby
-**Esito:** NON PROVATO. Non so se `adb` resta raggiungibile e se i tasti arrivano con la TV in standby. Da fare: il proprietario mette la TV in standby, poi `adb devices`, `adb connect`, `getevent -lt`.
+**Outcome:** NOT TESTED. I don't know whether `adb` stays reachable and whether the keys arrive with the TV in standby. To do: the owner puts the TV in standby, then `adb devices`, `adb connect`, `getevent -lt`.
 
-## T5 — Tasti e consumo da parte della UI
-**FATTO (dai log):** codici visti: `KEY_UP/DOWN/LEFT/RIGHT`, `KEY_SELECT`, `KEY_BACK`, `KEY_VOLUMEUP/DOWN`, `KEY_CHANNELUP/DOWN`, `KEY_SEARCH`, `KEY_STOPCD`, `KEY_EJECTCD`, `KEY_SHUFFLE`, `KEY_8`. Ogni pressione genera `DOWN` e `UP`.
-**FATTO (conferma del proprietario e prove):** tasto Verde tenuto 3 s -> combo `Alt+F4` in dry-run; tocco breve -> nessun effetto.
-**FATTO (prova del proprietario):** Rosso = `KEY_STOPCD`, Verde = `KEY_EJECTCD`, Giallo = `KEY_SHUFFLE` (il Giallo apre la panoramica di GNOME), Blu = `KEY_SEARCH`. `KEY_8` non è associato a un tasto noto.
-**FATTO (journal del servizio):** il tasto Home fisico arriva a `getevent` come `KEY_HOMEPAGE` (`[ignorato] KEY_HOMEPAGE DOWN/UP`), anche se la TV lo usa per uscire dall'ingresso.
-**Non lo so:** Play/Pausa, Mute e Assistant fisici non sono comparsi nei log; non so se li consuma la TV prima del kernel. `getevent` legge a livello kernel, quindi non dimostra che la TV non reagisca allo stesso tasto.
-**Esito:** PARZIALE.
+## T5 — Keys and consumption by the UI
+**DONE (from the logs):** codes seen: `KEY_UP/DOWN/LEFT/RIGHT`, `KEY_SELECT`, `KEY_BACK`, `KEY_VOLUMEUP/DOWN`, `KEY_CHANNELUP/DOWN`, `KEY_SEARCH`, `KEY_STOPCD`, `KEY_EJECTCD`, `KEY_SHUFFLE`, `KEY_8`. Every press produces `DOWN` and then `UP`.
+**DONE (owner's test):** Green held 3 s -> `Alt+F4` combo in dry-run; short tap -> no effect.
+**DONE (owner's test):** Red = `KEY_STOPCD`, Green = `KEY_EJECTCD`, Yellow = `KEY_SHUFFLE` (Yellow opens the GNOME overview), Blue = `KEY_SEARCH`. `KEY_8` is not tied to a known key.
+**DONE (service journal):** the physical Home key reaches `getevent` as `KEY_HOMEPAGE` (`[ignored] KEY_HOMEPAGE DOWN/UP`), even though the TV uses it to leave the input.
+**I don't know:** Play/Pause, Mute and Assistant did not appear in the logs; I don't know whether the TV consumes them before the kernel. `getevent` reads at kernel level, so it does not prove the TV does not react to the same key.
+**Outcome:** PARTIAL.
 
-## T6 — Persistenza di adb dopo reboot
-**Esito:** NON PROVATO. Da verificare: debug wireless ancora attivo, nuova autorizzazione richiesta, **la porta di connessione cambia?** (determina se un servizio può usare una porta fissa).
+## T6 — adb persistence after reboot
+**DONE:** before the reboot `adb` was connected on port `36465` and the pairing was registered. After the owner rebooted the TV, `adb devices` showed `<TV_IP>:36465 offline` and `adb connect` hung until the timeout.
+**DONE (journal):** the receiver crashed with `subprocess.TimeoutExpired` on `adb connect`; systemd restarted it 9 times. Fixed in `receiver/tv_remote.py` (the timeout is now caught and the connection is retried with backoff).
+**I don't know:** the new wireless debugging port after the reboot, whether the pairing is still valid, whether a new authorisation is needed.
+**Outcome:** PARTIAL. Next: read the new port on the TV (Developer options -> Wireless debugging) and run `adb connect`.
 
-## T7 — Latenza
-**FATTO:** non c'è un flusso video da misurare (HDMI diretto). **Non misurata** la latenza del percorso tasti (TV -> adb -> VM -> uinput). Il proprietario riferisce che i tasti funzionano; non c'è un numero.
-**Esito:** PARZIALE.
+## T7 — Latency
+**DONE:** there is no video stream to measure (direct HDMI). The key-path latency (TV -> adb -> VM -> uinput) was **not measured**. The owner reports that the keys work; there is no number.
+**Outcome:** PARTIAL.
 
-## T8 — Device uinput
-**Comandi (sulla VM):** `ls -l /dev/uinput`, `getfacl /dev/uinput`, `python3 -c "import evdev"`, `grep -A4 "TV Remote" /proc/bus/input/devices`.
-**Output reale:** `/dev/uinput` è `root:root` con ACL `user:claude:rw-`; `python-evdev` importabile; device "TV Remote (vm170)" creato su `event19` come tastiera.
-**Esito:** OK. FATTO. Nessuna modifica di permessi né installazione necessaria.
-**Rischi:** il device inietta tasti reali sulla VM (GNOME ed ES-DE li ricevono).
+## T8 — uinput device
+**Commands (on the VM):** `ls -l /dev/uinput`, `getfacl /dev/uinput`, `python3 -c "import evdev"`, `grep -A4 "TV Remote" /proc/bus/input/devices`.
+**Real output:** `/dev/uinput` is `root:root` with an ACL `user:<user>:rw-`; `python-evdev` importable; device "TV Remote" created as a keyboard.
+**Outcome:** OK. DONE. No permission change or installation was needed.
+**Risks:** the device injects real keys on the VM (GNOME and ES-DE receive them).
 
-## T9 — Mappatura
-**Scelta del proprietario (FATTO):** frecce -> frecce; OK -> Invio; Indietro -> Backspace; Canale su/giù -> media avanti/indietro (`KEY_NEXTSONG`/`KEY_PREVIOUSSONG`); `KEY_SEARCH` -> Play/Pausa; `KEY_STOPCD` -> Home (`KEY_HOMEPAGE`); `KEY_EJECTCD` -> `Alt+F4` dopo 3 s; `KEY_SHUFFLE` -> `KEY_LEFTMETA` (tocco = panoramica GNOME).
-**FATTO (VM, GNOME Shell 48.7):** `gsettings get org.gnome.mutter overlay-key` -> `'Super'`; `switch-applications` -> `['<Super>Tab', '<Alt>Tab']`. Alt+Tab da un solo tasto alternerebbe solo le ultime due app, quindi si è scelta la panoramica (frecce + Invio per scegliere). Il proprietario conferma che funziona.
-**FATTO (fonte `USERGUIDE.md` di ES-DE):** `USERGUIDE.md:651` frecce, `:661-663` Esc = menu principale (non Indietro), `:686` Invio = A, `:691` "Back key" = B (non nomina Backspace), `:705` `Alt+F4` esce.
-**FATTO (prova del proprietario):** ES-DE reagisce ai tasti iniettati ("funziona").
-**IPOTESI:** Backspace come tasto B in ES-DE: da confermare. WASD non funziona in ES-DE di default (non citato nella guida); scartato a favore delle frecce.
-**Non fatto:** Kodi (profilo assente), Input Remapper non provato.
-**Esito:** PARZIALE.
+## T9 — Mapping
+**Owner's choice (DONE):** arrows -> arrows; OK -> Enter; Back -> Backspace; Channel up/down -> next/previous media (`KEY_NEXTSONG`/`KEY_PREVIOUSSONG`); `KEY_SEARCH` -> Play/Pause; `KEY_STOPCD` -> Home (`KEY_HOMEPAGE`); `KEY_EJECTCD` -> `Alt+F4` after 3 s; `KEY_SHUFFLE` -> `KEY_LEFTMETA` (tap = GNOME overview).
+**DONE (VM, GNOME Shell 48.7):** `gsettings get org.gnome.mutter overlay-key` -> `'Super'`; `switch-applications` -> `['<Super>Tab', '<Alt>Tab']`. Alt+Tab from a single key would only toggle between the last two apps, so the overview was chosen (arrows + Enter to pick). The owner confirms it works.
+**DONE (source: ES-DE `USERGUIDE.md`):** `USERGUIDE.md:651` arrows, `:661-663` Esc = main menu (not Back), `:686` Enter = A, `:691` "Back key" = B (does not name Backspace), `:705` `Alt+F4` quits.
+**DONE (owner's test):** ES-DE reacts to the injected keys ("it works").
+**HYPOTHESIS:** Backspace as ES-DE's B key: to be confirmed. WASD does not work in ES-DE by default (not mentioned in the guide); discarded in favour of the arrows.
+**Not done:** Kodi (no profile yet), Input Remapper not tried (not installed on the VM).
+**Outcome:** PARTIAL.
 
-## T10 — Unità systemd
-**Fatto:** `receiver/tv-remote.service` (unità utente, `Restart=always`, `RestartSec=2`). **Non installata come file.**
-**FATTO:** il receiver gira come servizio utente transitorio (`systemd-run --user --unit=tv-remote -p Restart=always -p RestartSec=2 ...`), `systemctl --user is-active tv-remote` -> `active`, device `TV Remote (vm170)` creato. Non sopravvive a un riavvio della VM.
-**Non lo so:** comportamento al boot, se la TV non risponde, tempo di riavvio dopo kill del processo.
-**Rischi:** la porta del debug wireless può cambiare (vedi T6). Senza `loginctl enable-linger` il servizio parte solo con il login.
+## T10 — systemd unit
+**Done:** `receiver/tv-remote.service` (user unit, `Restart=always`, `RestartSec=2`). **Not installed as a file.**
+**DONE:** the receiver runs as a transient user service (`systemd-run --user --unit=tv-remote -p Restart=always -p RestartSec=2 ...`), `systemctl --user is-active tv-remote` -> `active`, device created. It does not survive a reboot of the VM.
+**I don't know:** behaviour at boot, restart time after killing the process.
+**Risks:** the wireless debugging port can change (see T6). Without `loginctl enable-linger` the service starts only with a login.
 
-## T11 — Iniettare solo quando la TV mostra la VM
-**Problema:** senza controllo il receiver inietta i tasti anche quando si usa la TV (home, altre app, altri ingressi).
-**FATTO (`adb shell dumpsys hdmi_control` e `dumpsys tv_input`):**
-- VM su HDMI 1: `mActiveRoutingPath: 0x1000`, `mActiveSource: (invalid, invalid)`, app in primo piano `com.mitv.livetv`.
-- Home della TV: `mActiveRoutingPath: 0x0000`, `mActiveSource: (0x00, 0x0000)`, app in primo piano il launcher.
-- `tv_input` resta con la sessione `HW2` anche fuori da HDMI 1: **non** è un segnale affidabile.
-- Un Apple TV su HDMI 2 compare come dispositivo CEC all'indirizzo `0x2000`.
-**Soluzione:** `tv_remote.py` legge `mActiveRoutingPath` ogni 1,5 s (opzioni `--active-path`, `--poll`, `--no-gate`) e inietta solo se vale `0x1000`. Se la lettura fallisce non inietta. All'uscita da HDMI 1 rilascia tutti i tasti.
-**FATTO (journal):** `15:58:07 percorso=0x1000 -> si`, `15:58:16 percorso=0x0000 -> no` (circa 2 s dopo il tasto Home), `15:58:34 percorso=0x1000 -> si`. Il proprietario conferma che sulla home la VM non reagisce e su HDMI 1 sì.
-**Non lo so:** valore con l'Apple TV in primo piano (IPOTESI: `0x2000`); comportamento con la TV in standby; carico del polling sulla TV.
-**Esito:** OK.
+## T11 — Inject only while the TV shows the machine
+**Problem:** without a check the receiver injects the keys even when the TV is used for something else (home, other apps, other inputs).
+**DONE (`adb shell dumpsys hdmi_control` and `dumpsys tv_input`):**
+- Machine on HDMI 1: `mActiveRoutingPath: 0x1000`, `mActiveSource: (invalid, invalid)`, foreground app `com.mitv.livetv`.
+- TV home: `mActiveRoutingPath: 0x0000`, `mActiveSource: (0x00, 0x0000)`, foreground app the launcher.
+- `tv_input` keeps the `HW2` session even outside HDMI 1: it is **not** a reliable signal.
+- An Apple TV on HDMI 2 shows up as a CEC device at address `0x2000`.
+**Solution:** `tv_remote.py` reads `mActiveRoutingPath` every 1.5 s (options `--active-path`, `--poll`, `--no-gate`) and injects only if it equals `0x1000`. If the read fails it does not inject. When leaving HDMI 1 it releases all keys.
+**DONE (journal):** `15:58:07 path=0x1000 -> yes`, `15:58:16 path=0x0000 -> no` (about 2 s after the Home key), `15:58:34 path=0x1000 -> yes`. The owner confirms that on the home screen the machine does not react and on HDMI 1 it does.
+**I don't know:** value with the Apple TV in the foreground (HYPOTHESIS: `0x2000`); behaviour with the TV in standby; load of the polling on the TV.
+**Outcome:** OK.
 
-## Raccomandazione (provvisoria)
-Variante A (senza app sulla TV) funziona. Prima di renderla permanente: T6 (stabilità della porta) e T4 (standby). Se la porta cambia a ogni riavvio, la variante A richiede un nuovo pairing manuale e la variante B diventa preferibile.
+## Recommendation (provisional)
+Variant A (no app on the TV) works. Before making it permanent: T6 (port stability) and T4 (standby). If the port changes at every reboot, variant A needs a manual re-pairing or reconnection and variant B becomes preferable.
 
-## Da fare
-T4, T6, T10, misura della latenza, conferma di Backspace in ES-DE, Kodi, azione per `KEY_SHUFFLE`.
+## To do
+T4, T6, T10, key-latency measurement, confirm Backspace in ES-DE, Kodi, install the systemd unit.
 
-## Proposte
-- Pressione lunga anche per altri tasti.
-- Riconnessione automatica con ricerca della porta via mDNS (`adb mdns services`), da verificare.
+## Proposals
+- Long press for other keys.
+- Automatic reconnection by discovering the port through mDNS (`adb mdns services`), to be verified.
+- A `--raw` mode that injects a unique code per physical key, so a tool such as Input Remapper can bind each key freely (not implemented; Input Remapper not verified).

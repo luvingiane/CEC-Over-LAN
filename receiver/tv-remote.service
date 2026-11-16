@@ -1,23 +1,23 @@
-# Unità systemd UTENTE (non serve root). NON ancora installata.
-# Installazione prevista, dopo il via del proprietario:
+# systemd USER unit (no root needed). NOT installed yet.
+# Planned installation, after the owner's approval:
 #   mkdir -p ~/.config/systemd/user
 #   cp tv-remote.service ~/.config/systemd/user/
-#   echo 'TV_TARGET=<IP_TV>:<PORTA>' > ~/vm170-tv-remote/tv-remote.env
+#   echo 'TV_TARGET=<TV_IP>:<PORT>' > ~/cec-over-lan/tv-remote.env
 #   systemctl --user daemon-reload && systemctl --user enable --now tv-remote
-#   loginctl enable-linger $USER      # avvio al boot senza login (richiede permesso)
-# Rimozione: systemctl --user disable --now tv-remote; rm ~/.config/systemd/user/tv-remote.service
+#   loginctl enable-linger $USER      # start at boot without a login (needs permission)
+# Removal: systemctl --user disable --now tv-remote; rm ~/.config/systemd/user/tv-remote.service
 [Unit]
-Description=Telecomando Google TV -> uinput (VM 170)
+Description=Google TV remote -> uinput (CEC-Over-LAN)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=%h/vm170-tv-remote/tv-remote.env
-ExecStart=/usr/bin/python3 -B %h/vm170-tv-remote/tv_remote.py --target ${TV_TARGET}
+EnvironmentFile=%h/cec-over-lan/tv-remote.env
+ExecStart=/usr/bin/python3 -B %h/cec-over-lan/tv_remote.py --target ${TV_TARGET}
 Restart=always
 RestartSec=2
-# Il riavvio e il backoff delle connessioni adb sono gestiti anche dentro lo script.
+# adb reconnection with backoff is also handled inside the script.
 
 [Install]
 WantedBy=default.target

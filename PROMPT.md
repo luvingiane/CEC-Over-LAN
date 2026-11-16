@@ -1,129 +1,129 @@
-# PROMPT.md — Analisi e test di fattibilità: telecomando Google TV come input della VM 170
+# PROMPT.md — Feasibility analysis and tests: Google TV remote as input for VM 170
 
-Leggi prima `RULES.md`. Le regole lì dentro sono vincolanti e prevalgono su questo documento.
-Non eseguire nulla da solo: proponi un passo per volta, il proprietario lo esegue e ti incolla l'output.
+Read `RULES.md` first. The rules in it are binding and override this document.
+Do not run anything yourself: propose one step at a time, the owner runs it and pastes the output.
 
-## 1. Contesto
+## 1. Context
 
-- La **VM 170** è una VM Debian su Proxmox: box gaming/multimediale. La sua uscita video è mostrata sulla **TV Google TV** del proprietario.
-- Il **telecomando fisico della Google TV** oggi controlla la TV, non la VM.
-- Non è ancora noto **come il video della VM arriva alla TV** (Moonlight, Steam Link, Kodi, altro). Questo dato decide tutto il resto.
+- **VM 170** is a Debian VM on Proxmox: a gaming/multimedia box. Its video output is shown on the owner's **Google TV**.
+- The **physical remote of the Google TV** currently controls the TV, not the VM.
+- It is not yet known **how the VM's video reaches the TV** (Moonlight, Steam Link, Kodi, something else). This decides everything else.
 
-## 2. Obiettivo
+## 2. Goal
 
-Stabilire con prove reali se e come i tasti del telecomando della Google TV possono diventare un dispositivo di input della VM 170, e produrre una raccomandazione motivata.
+Establish with real tests whether and how the keys of the Google TV remote can become an input device for VM 170, and produce a motivated recommendation.
 
-Architettura ipotizzata (da verificare, non da dare per vera):
+Hypothesised architecture (to be verified, not assumed true):
 
-- **Sender sulla TV**, due varianti da confrontare:
-  - **A, senza app:** la VM fa `adb connect` alla TV e legge `adb shell getevent -l`.
-  - **B, app Android con AccessibilityService** che cattura i tasti e li invia via UDP. Per B fai solo analisi e design: niente codice, niente installazione sulla TV senza il via del proprietario (RULES 14, 15).
-- **Receiver sulla VM 170:** demone systemd in Python (`python-evdev`) che crea un device `uinput` e re-inietta i tasti ricevuti.
-- **Mappatura finale:** Input Remapper oppure configurazione diretta di ES-DE / Kodi.
+- **Sender on the TV**, two variants to compare:
+  - **A, no app:** the VM runs `adb connect` to the TV and reads `adb shell getevent -l`.
+  - **B, Android app with an AccessibilityService** that captures the keys and sends them over UDP. For B do analysis and design only: no code, no installation on the TV without the owner's go-ahead (RULES 14, 15).
+- **Receiver on VM 170:** a systemd daemon in Python (`python-evdev`) that creates a `uinput` device and re-injects the received keys.
+- **Final mapping:** Input Remapper or direct configuration of ES-DE / Kodi.
 
-Fuori da questo compito: root, bootloader, flash, modifiche di sistema alla TV o al router (RULES 1–5).
+Out of scope: root, bootloader, flash, system changes to the TV or the router (RULES 1–5).
 
-## 3. Cosa produci
+## 3. What you produce
 
-1. Un report per ogni test, nel formato della sezione 5, in `REPORT.md`.
-2. `STATO.md` aggiornato dopo ogni test (RULES 38).
-3. Alla fine, una sezione **Raccomandazione**: variante A, variante B, nessuna delle due, oppure "il sender non serve". Con i dati che la sostengono e quello che resta non provato.
-4. Una sezione **Proposte** con le idee non richieste (non realizzate).
+1. One report per test, in the format of section 5, in `REPORT.md`.
+2. `STATUS.md` updated after each test (RULES 38).
+3. At the end, a **Recommendation** section: variant A, variant B, neither, or "the sender is not needed". With the data that supports it and what remains unproven.
+4. A **Proposals** section with the unrequested ideas (not implemented).
 
-## 4. Test, in ordine
+## 4. Tests, in order
 
-Esegui i test nell'ordine. Non saltare un test e non passare al successivo senza l'esito del precedente. Dopo il test 1 e il test 5 c'è un punto di decisione.
+Run the tests in order. Do not skip a test and do not move on without the outcome of the previous one. After test 1 and test 5 there is a decision point.
 
-### T1 — Come arriva il video della VM alla TV
-Scopo: identificare il metodo (Moonlight, Steam Link, Kodi, altro) e quale app è in primo piano sulla TV mentre mostra la VM.
-Da fare: chiedi al proprietario come vede la VM sulla TV; sulla VM elenca i servizi e i processi di streaming in sola lettura (`systemctl list-units --type=service --state=running`, `ps -eo pid,comm,args` filtrato per nome noto, senza `pgrep -f`).
-Domanda chiave: l'app in primo piano sulla TV riceve già i tasti del telecomando e li inoltra alla VM?
-Fonte da cercare: documentazione ufficiale dell'app individuata sul supporto dei tasti del telecomando (Android TV / Google TV) e sull'inoltro dell'input.
-**Punto di decisione D1:** se l'app inoltra già i tasti alla VM (provato dal proprietario premendo i tasti e osservando l'effetto, e confermato da `evtest` o `libinput debug-events` sulla VM), fermati: il sender potrebbe non servire. Riporta e chiedi come proseguire. Se non li inoltra, o li inoltra solo in parte, continua e annota quali.
+### T1 — How the VM's video reaches the TV
+Purpose: identify the method (Moonlight, Steam Link, Kodi, other) and which app is in the foreground on the TV while it shows the VM.
+To do: ask the owner how they see the VM on the TV; on the VM list the streaming services and processes read-only (`systemctl list-units --type=service --state=running`, `ps -eo pid,comm,args` filtered by a known name, without `pgrep -f`).
+Key question: does the app in the foreground on the TV already receive the remote's keys and forward them to the VM?
+Source to look for: the official documentation of the identified app on remote-key support (Android TV / Google TV) and on input forwarding.
+**Decision point D1:** if the app already forwards the keys to the VM (proven by the owner pressing keys and watching the effect, and confirmed by `evtest` or `libinput debug-events` on the VM), stop: the sender may not be needed. Report and ask how to proceed. If it does not forward them, or only partly, continue and note which.
 
-### T2 — adb raggiungibile dalla VM
-Scopo: verificare che la VM raggiunga la TV via `adb`.
-Prerequisiti: `adb` installato sulla VM (verifica con `command -v adb`; se manca, chiedi permesso, RULES 8). Il debug ADB sulla TV è abilitato **dal proprietario a mano**: spiegagli cosa fa e come si disabilita prima (RULES 15).
-Comandi: `timeout 10 adb connect <IP_TV>:5555`, poi `timeout 10 adb devices`.
-Verifica anche: la TV chiede l'autorizzazione della chiave RSA al primo collegamento (è il proprietario a confermarla sul televisore).
-Rischi da riportare: chiave ADB sulla TV, TV raggiungibile via rete dalla VM, ADB aperto sulla LAN.
+### T2 — adb reachable from the VM
+Purpose: verify that the VM can reach the TV over `adb`.
+Prerequisites: `adb` installed on the VM (check with `command -v adb`; if missing, ask permission, RULES 8). ADB debugging on the TV is enabled **by the owner, by hand**: first explain what it does and how to disable it (RULES 15).
+Commands: `timeout 10 adb connect <TV_IP>:5555`, then `timeout 10 adb devices`.
+Also verify: the TV asks to authorise the RSA key on the first connection (the owner confirms it on the TV).
+Risks to report: ADB key on the TV, TV reachable over the network from the VM, ADB open on the LAN.
 
-### T3 — getevent con TV accesa
-Scopo: vedere se `getevent` legge gli eventi del telecomando.
-Comandi, uno per volta: `timeout 10 adb shell ls /dev/input`, `timeout 10 adb shell cat /proc/bus/input/devices`, poi `timeout 30 adb shell getevent -lt` mentre il proprietario preme alcuni tasti.
-Da riportare: se il comando gira senza errori di permessi, quali device compaiono, quale device corrisponde al telecomando, se gli eventi arrivano.
-Fonte da cercare: documentazione AOSP su `getevent` e sul sottosistema input; documentazione del kernel su `evdev`.
+### T3 — getevent with the TV on
+Purpose: see whether `getevent` reads the remote's events.
+Commands, one at a time: `timeout 10 adb shell ls /dev/input`, `timeout 10 adb shell cat /proc/bus/input/devices`, then `timeout 30 adb shell getevent -lt` while the owner presses some keys.
+To report: whether the command runs without permission errors, which devices appear, which device is the remote, whether events arrive.
+Source to look for: AOSP documentation on `getevent` and the input subsystem; kernel documentation on `evdev`.
 
 ### T4 — getevent in standby
-Scopo: capire cosa succede con la TV in standby.
-Passi: con TV in standby (messa in standby dal proprietario con il telecomando, non scollegata) prova `timeout 10 adb devices`, poi `timeout 10 adb connect <IP_TV>:5555`, poi `timeout 30 adb shell getevent -lt`.
-Da riportare: la connessione sopravvive, cade, si riapre da sola? Con la TV in standby i tasti arrivano? Quale tasto sveglia la TV e quel tasto genera eventi leggibili?
-Non spegnere né riavviare nulla via `adb` (RULES 3): lo standby lo attiva il proprietario con il telecomando.
+Purpose: understand what happens with the TV in standby.
+Steps: with the TV in standby (put there by the owner with the remote, not unplugged) try `timeout 10 adb devices`, then `timeout 10 adb connect <TV_IP>:5555`, then `timeout 30 adb shell getevent -lt`.
+To report: does the connection survive, drop, reopen by itself? Do keys arrive with the TV in standby? Which key wakes the TV and does that key generate readable events?
+Do not switch off or reboot anything via `adb` (RULES 3): standby is triggered by the owner with the remote.
 
-### T5 — Quali tasti arrivano e quali li consuma la UI
-Scopo: classificare ogni tasto del telecomando.
-Tasti da provare uno alla volta, chiedendo al proprietario di premerli e incollare l'output: frecce, OK/Select, Back, Home, Menu, Assistant/microfono, Play/Pausa, Avanti/Indietro veloce, Volume +/−, Mute, tasti numerici e tasti colorati se presenti, tasti app/scorciatoie.
-Per ogni tasto riporta: appare in `getevent`? (sì/no), nome e codice evento, la UI della TV lo consuma comunque? (sì/no, come osservato dal proprietario), in quale schermata/app.
-Distinzione obbligatoria: `getevent` legge a livello kernel (prima di Android), quindi può vedere tasti che la UI poi consuma; il fatto che un tasto compaia in `getevent` non dice che la VM possa impedire alla TV di reagire. Verificalo e riportalo come FATTO o IPOTESI.
-**Punto di decisione D2:** se Home/Back/Assistant sono consumati dalla UI e si vogliono usare lato VM, riporta le opzioni (ignorarli, usare altri tasti, variante B con AccessibilityService) con costo e rischio, e chiedi come proseguire.
+### T5 — Which keys arrive and which are consumed by the UI
+Purpose: classify every key of the remote.
+Keys to try one at a time, asking the owner to press them and paste the output: arrows, OK/Select, Back, Home, Menu, Assistant/microphone, Play/Pause, Fast forward/Rewind, Volume +/−, Mute, number keys and colour keys if present, app/shortcut keys.
+For each key report: does it appear in `getevent`? (yes/no), event name and code, does the TV UI consume it anyway? (yes/no, as observed by the owner), in which screen/app.
+Mandatory distinction: `getevent` reads at kernel level (before Android), so it can see keys that the UI then consumes; a key appearing in `getevent` does not mean the VM can stop the TV from reacting to it. Verify it and report it as DONE or HYPOTHESIS.
+**Decision point D2:** if Home/Back/Assistant are consumed by the UI and are wanted on the VM side, report the options (ignore them, use other keys, variant B with an AccessibilityService) with cost and risk, and ask how to proceed.
 
-### T6 — Persistenza di adb dopo reboot
-Scopo: sapere se `adb` sulla TV resta attivo e raggiungibile dopo un riavvio.
-Il riavvio della TV lo fa il proprietario (RULES 3). Dopo il riavvio: `timeout 10 adb devices`, `timeout 10 adb connect <IP_TV>:5555`.
-Da riportare: il debug ADB è ancora abilitato? Serve una nuova autorizzazione? L'IP della TV cambia (DHCP)? Cosa succede dopo lo standby prolungato?
-Non proporre modifiche al router per fissare l'IP: puoi solo consigliare al proprietario di farlo lui (RULES 5).
+### T6 — adb persistence after reboot
+Purpose: know whether `adb` on the TV stays active and reachable after a reboot.
+The TV reboot is done by the owner (RULES 3). After the reboot: `timeout 10 adb devices`, `timeout 10 adb connect <TV_IP>:5555`.
+To report: is ADB debugging still enabled? Is a new authorisation needed? Does the TV's IP change (DHCP)? What happens after a long standby?
+Do not propose router changes to fix the IP: you may only advise the owner to do it themselves (RULES 5).
 
-### T7 — Latenza dello stream
-Scopo: misurare la latenza del video VM→TV e capire quanta latenza aggiunge il percorso dei tasti.
-Metodo: usa solo strumenti già presenti o concordati con il proprietario. Proponi un metodo (per esempio stima dell'intervallo tra pressione del tasto e comparsa dell'effetto, con i timestamp di `getevent -t` e di `evtest` sulla VM), dichiaralo come stima e riporta i limiti.
-Da riportare: latenza dello stream (se misurabile), latenza del percorso tasti (adb getevent → VM), numero di misure, mediana e massimo. Non dichiarare un valore senza le misure.
-Fonte: documentazione del metodo di streaming individuato in T1 sulla latenza.
+### T7 — Stream latency
+Purpose: measure the video latency VM→TV and understand how much latency the key path adds.
+Method: use only tools already present or agreed with the owner. Propose a method (for example an estimate of the interval between the key press and the effect appearing, using the timestamps of `getevent -t` and of `evtest` on the VM), declare it an estimate and report its limits.
+To report: stream latency (if measurable), key-path latency (adb getevent → VM), number of measurements, median and maximum. Do not state a value without the measurements.
+Source: the documentation of the streaming method identified in T1 on latency.
 
-### T8 — Creazione di un device uinput sulla VM
-Scopo: verificare che la VM possa creare un device di input virtuale.
-Verifiche in sola lettura per prime: `ls -l /dev/uinput`, `lsmod | grep uinput`, `id`, versione di Python e di `python-evdev` (`python3 -c 'import evdev; print(evdev.__version__)'`).
-Solo dopo il via del proprietario (RULES 8, 14, 22): venv in `~/vm170-tv-remote/`, script di prova che crea un device `uinput` con pochi tasti, lo mantiene per pochi secondi e invia un tasto; verifica con `evtest` o `libinput debug-events`.
-Da riportare: permessi su `/dev/uinput`, se serve una regola udev o l'appartenenza a un gruppo (indica la modifica e chiedi il permesso, non applicarla), nome e percorso del device creato.
-Fonte: documentazione di `python-evdev` e del kernel su `uinput`.
+### T8 — Creating a uinput device on the VM
+Purpose: verify that the VM can create a virtual input device.
+Read-only checks first: `ls -l /dev/uinput`, `lsmod | grep uinput`, `id`, Python and `python-evdev` versions (`python3 -c 'import evdev; print(evdev.__version__)'`).
+Only after the owner's go-ahead (RULES 8, 14, 22): a venv in `~/cec-over-lan/`, a test script that creates a `uinput` device with a few keys, keeps it for a few seconds and sends one key; verify with `evtest` or `libinput debug-events`.
+To report: permissions on `/dev/uinput`, whether a udev rule or group membership is needed (state the change and ask permission, do not apply it), name and path of the created device.
+Source: the documentation of `python-evdev` and of the kernel on `uinput`.
 
-### T9 — Mappatura
-Scopo: far fare ai tasti ricevuti le azioni volute in ES-DE / Kodi.
-Confronta due opzioni e raccomanda una: (1) Input Remapper; (2) mappatura diretta in ES-DE / Kodi.
-Da riportare: quali azioni di ES-DE e Kodi si mappano da tastiera/gamepad, come, e con quali limiti (fonte: documentazione ufficiale di ES-DE, Kodi, Input Remapper). Prova la mappatura solo dopo il via del proprietario e senza modificare configurazioni esistenti prima di averne fatto il backup (RULES 21).
+### T9 — Mapping
+Purpose: make the received keys perform the wanted actions in ES-DE / Kodi.
+Compare two options and recommend one: (1) Input Remapper; (2) direct mapping in ES-DE / Kodi.
+To report: which ES-DE and Kodi actions can be mapped from keyboard/gamepad, how, and with which limits (source: official ES-DE, Kodi and Input Remapper documentation). Try the mapping only after the owner's go-ahead and without changing existing configurations before backing them up (RULES 21).
 
-### T10 — Unità systemd con restart automatico
-Scopo: far girare il receiver come servizio affidabile.
-Da fare: proponi il testo dell'unità e **non installarla** finché il proprietario non approva (RULES 8, 14, 22). Includi `Restart=`, `RestartSec=`, utente non root se possibile, dipendenze di rete, log in `journald`.
-Verifiche dopo il via: `systemctl status`, `journalctl -u <unità> -n 50 --no-pager`, kill del solo PID del processo (non `pkill -f`, RULES 12) per verificare il riavvio automatico, riavvio della VM solo se il proprietario lo chiede.
-Da riportare: tempo di riavvio, comportamento se la TV non è raggiungibile (riconnessione `adb` con backoff), comportamento al boot.
+### T10 — systemd unit with automatic restart
+Purpose: run the receiver as a reliable service.
+To do: propose the unit text and **do not install it** until the owner approves (RULES 8, 14, 22). Include `Restart=`, `RestartSec=`, a non-root user if possible, network dependencies, logs in `journald`.
+Checks after the go-ahead: `systemctl status`, `journalctl -u <unit> -n 50 --no-pager`, kill only the process PID (not `pkill -f`, RULES 12) to verify the automatic restart, reboot the VM only if the owner asks.
+To report: restart time, behaviour if the TV is unreachable (`adb` reconnection with backoff), behaviour at boot.
 
-## 5. Formato del report per ogni test
+## 5. Report format for each test
 
-Ripeti questa struttura in `REPORT.md` per ogni test. Nessuna sezione si omette: se un campo non è applicabile scrivi "non applicabile" con il motivo.
+Repeat this structure in `REPORT.md` for each test. No section is omitted: if a field does not apply write "not applicable" with the reason.
 
 ```
-## T<numero> — <titolo>
+## T<number> — <title>
 
-**Comando:** <il comando esatto proposto>
-**Cosa fa (una riga):** <spiegazione>
-**Output atteso:** <previsione, marcata IPOTESI, con la fonte da cui nasce>
-**Output reale:** <output incollato dal proprietario, copiato così com'è, senza modifiche>
-**Esito:** <OK | PARZIALE | FALLITO | BLOCCATO | NON FATTIBILE>  — <una riga di motivo>
-**Differenze atteso/reale:** <elenco, o "nessuna">
-**Rischi:** <rischio del comando, rischio della soluzione, come si annulla>
-**FATTO / IPOTESI:** <elenco di affermazioni, ognuna marcata, ognuna con fonte (RULES 28)>
-**Non lo so:** <dati mancanti e comando che li fornirebbe>
-**Prossimo passo:** <un solo passo>
+**Command:** <the exact proposed command>
+**What it does (one line):** <explanation>
+**Expected output:** <prediction, marked HYPOTHESIS, with the source it comes from>
+**Real output:** <output pasted by the owner, copied as is, unmodified>
+**Outcome:** <OK | PARTIAL | FAILED | BLOCKED | NOT FEASIBLE>  — <one line of reason>
+**Expected/real differences:** <list, or "none">
+**Risks:** <risk of the command, risk of the solution, how to undo it>
+**DONE / HYPOTHESIS:** <list of claims, each marked, each with a source (RULES 28)>
+**I don't know:** <missing data and the command that would provide it>
+**Next step:** <a single step>
 ```
 
-Per i test con più comandi scrivi un blocco `Comando / Cosa fa / Output atteso / Output reale` per ogni comando, dentro la stessa sezione. L'esito vale per l'intero test.
+For tests with several commands write a `Command / What it does / Expected output / Real output` block for each command, inside the same section. The outcome covers the whole test.
 
-## 6. Come cominci
+## 6. How to start
 
-1. Leggi `RULES.md` e questo file. Crea `STATO.md` con "PROSSIMO PASSO: T1".
-2. Scrivi in una riga cosa farai e chiedi al proprietario: **"Come vedi la VM 170 sulla TV (app e metodo)?"**
-3. Aspetta la risposta. Non proporre altro.
+1. Read `RULES.md` and this file. Create `STATUS.md` with "NEXT STEP: T1".
+2. Write in one line what you are going to do and ask the owner: **"How do you see VM 170 on the TV (app and method)?"**
+3. Wait for the answer. Do not propose anything else.
 
-## 7. Chiusura
+## 7. Closing
 
-Alla fine scrivi in `REPORT.md`: tabella riassuntiva dei test (T1–T10, esito), **Raccomandazione**, **Da fare** (solo ciò che non si può fare qui e perché), **Proposte**. Poi "FINITO" in `STATO.md` (RULES 41).
+At the end write in `REPORT.md`: a summary table of the tests (T1–T10, outcome), **Recommendation**, **To do** (only what cannot be done here and why), **Proposals**. Then "FINISHED" in `STATUS.md` (RULES 41).

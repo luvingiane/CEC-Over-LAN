@@ -31,6 +31,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T24 Dock popping up on remote presses | Fixed in code and tested; to be confirmed on the TV |
 | T25 On-screen keyboard full width, flush bottom | OK (pending the owner's look on the TV) |
 | T26 Phone UI: tabs, drawn remote, binding sheet | OK (pending the owner's use on the phone) |
+| T27 Esc gives the focus back after the dock | OK (pending the owner's check) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -240,6 +241,15 @@ The T18 fix only applies to applications launched after the receiver restarts wi
 **DONE (on the machine):** files deployed, the web service restarted alone (the receiver was not touched), the model loads there (41 buttons).
 **Not verified:** the layout on a real phone (only a 375x812 emulation), Learn with the real remote, the guessed and unknown codes (`guess`/`null` in `remote.json`).
 **Outcome:** OK, pending the owner's use on the phone.
+
+## T27 — Esc after the dock does not give the focus back to the application
+**Problem (owner):** after opening the dock, Esc does not bring the focus back to the application on screen; the arrows keep driving GNOME.
+**DONE (measured on the machine, with a test virtual keyboard):** focused window before = `es-de`; after `Ctrl+Alt+Tab` = **no window** (`pid=0`) — which also shows that the combination works as one quick tap; after `Esc` = still no window (the problem reproduced); after `ActivatePid(<es-de pid>)` of the `focuspid` extension = `es-de` again.
+**Done:** the receiver remembers the last window that really had the focus and, when a remote button sends `Esc` while no window has it, calls `ActivatePid` for that window 0.25 s later (not in dry run, not if nothing was ever seen). A bug found by the tests and fixed: the focus used to be read after the key had been handled, i.e. a stale value.
+**DONE (tests):** 75 offline tests pass: the focus goes back to the window seen before, nothing happens while a window has the focus, with no window ever seen or no focus information, for other keys, and in dry run; through the router with a simulated remote press.
+**DONE (on the machine):** receiver restarted with `KillMode=process` for that restart only; ES-DE and YouTube TV stayed open.
+**Not verified:** the whole chain with the real remote (Esc pressed on the remote after the dock); a case where several windows are open and the last focused one is not the one on screen.
+**Outcome:** OK, pending the owner's check.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

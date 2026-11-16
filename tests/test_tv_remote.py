@@ -332,8 +332,11 @@ class FakeFocus:
     def current(self):
         return self.f
 
+    def restore_soon(self, delay=0.25):
+        return False
 
-BACK = {"KEY_BACK": {"tap": "KEY_ESC", "apps": {"es-de": {"tap": "KEY_BACKSPACE"},
+
+BACK ={"KEY_BACK": {"tap": "KEY_ESC", "apps": {"es-de": {"tap": "KEY_BACKSPACE"},
                                                 "Kodi": {"tap": "KEY_BACKSPACE"}}}}
 
 
@@ -362,7 +365,8 @@ class AppRules(unittest.TestCase):
             self.assertEqual(out.events, [("KEY_BACKSPACE", 1), ("KEY_BACKSPACE", 0)], fields)
 
     def test_no_focus_information_uses_the_default(self):
-        router, out = self.router(type("NoFocus", (), {"current": lambda self: None})())
+        router, out = self.router(type("NoFocus", (), {"current": lambda self: None,
+                                                       "restore_soon": lambda self, delay=0.25: False})())
         self.press(router)
         self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)])
 
@@ -614,6 +618,83 @@ class RemoteModel(unittest.TestCase):
         for bad in ({"id": "nope", "code": "KEY_A"}, {"id": "info", "code": "rm -rf"},
                     {"id": "info", "code": None}, {"id": "info"}, {"code": "KEY_A"}):
             self.assertFalse(self.web.do_remote(bad)["ok"], bad)
+
+
+def win(pid, cls="app"):
+    return {"pid": pid, "class": cls, "app_id": "", "title": "", "comm": cls}
+
+
+class FocusRestore(unittest.TestCase):
+    """Esc with no window focused (the dock after Ctrl+Alt+Tab) must hand the focus back."""
+
+    def make(self, *answers):
+        seq, activated = list(answers), []
+        f = core.Focus(query=lambda: seq.pop(0) if len(seq) > 1 else seq[0],
+                       activate=lambda pid: activated.append(pid) or True)
+        return f, activated
+
+    def tick(self, f):
+        f._at = -99.0          # skip the 0.25 s cache
+
+    def test_returns_the_focus_to_the_window_that_had_it(self):
+        f, activated = self.make(win(111, "es-de"), win(0, ""))
+        f.current(); self.tick(f)              # the press that opens the dock: es-de is focused
+        f.current()                            # the next press: no window has the focus any more
+        self.assertTrue(f.restore_soon(delay=0.02))
+        time.sleep(0.2)
+        self.assertEqual(activated, [111])
+
+    def test_nothing_to_do_while_a_window_has_the_focus(self):
+        f, activated = self.make(win(111, "es-de"))
+        f.current()
+        self.assertFalse(f.restore_soon(delay=0.02))
+        time.sleep(0.1)
+        self.assertEqual(activated, [])
+
+    def test_nothing_to_restore_if_no_window_was_ever_seen(self):
+        f, activated = self.make(win(0, ""))
+        f.current()
+        self.assertFalse(f.restore_soon(delay=0.02))
+
+    def test_no_focus_information_does_nothing(self):
+        f, activated = self.make(None)
+        f.current()
+        self.assertFalse(f.restore_soon(delay=0.02))
+
+    def router(self, raw, *answers, dry=False):
+        router, out, _ = make_router(raw)
+        f, activated = self.make(*answers)
+        f.restore_soon = lambda delay=0.25, _o=f.restore_soon: _o(delay=0.02)   # keep the test fast
+        router.focus = f
+        if dry:
+            out.is_dry = lambda: True
+        return router, out, activated
+
+    def test_esc_from_the_remote_restores_the_focus_after_the_dock(self):
+        router, out, activated = self.router({"KEY_BACK": {"tap": "KEY_ESC"}}, win(111, "es-de"), win(0, ""))
+        router.focus.current()                        # a previous press saw es-de
+        router.focus._at = -99.0
+        router.on_event("KEY_BACK", "DOWN", True)     # the dock has the focus: pid 0
+        router.on_event("KEY_BACK", "UP", True)
+        time.sleep(0.2)
+        self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)])
+        self.assertEqual(activated, [111])
+
+    def test_other_keys_never_restore_the_focus(self):
+        router, out, activated = self.router({"KEY_UP": {"tap": "KEY_UP"}}, win(111, "es-de"), win(0, ""))
+        router.focus.current(); router.focus._at = -99.0
+        router.on_event("KEY_UP", "DOWN", True)
+        router.on_event("KEY_UP", "UP", True)
+        time.sleep(0.2)
+        self.assertEqual(activated, [])
+
+    def test_dry_run_does_not_touch_the_focus(self):
+        router, out, activated = self.router({"KEY_BACK": {"tap": "KEY_ESC"}}, win(111, "es-de"), win(0, ""), dry=True)
+        router.focus.current(); router.focus._at = -99.0
+        router.on_event("KEY_BACK", "DOWN", True)
+        router.on_event("KEY_BACK", "UP", True)
+        time.sleep(0.2)
+        self.assertEqual(activated, [])
 
 
 class Actions(unittest.TestCase):

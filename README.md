@@ -92,6 +92,10 @@ Every key can have exceptions that apply only while a given application has the 
 
 The text is matched, case-insensitively and as a substring, against the window class, the application id, the window title and the process name; the first matching exception replaces the whole action of that key. The focused window comes from the GNOME Shell extension `focuspid` (D-Bus `org.claude.FocusPid`, shipped on the test machine, not in this repository): without it, exceptions simply never match. The *Key monitor* shows the app name seen at each press, which is the easiest way to find the text to use. The action chosen at the press is the one used at the release, even if the focus changes in between.
 
+### Esc gives the focus back after the dock
+
+`Ctrl+Alt+Tab` focuses the dock by taking the keyboard focus away from every window, so afterwards `Esc` closes nothing and the arrows keep driving GNOME. When a remote button sends `Esc` while no window has the focus (the dock, the overview, a shell menu), the receiver gives the focus back to the last window that had it (`ActivatePid` of the `focuspid` extension), about a quarter of a second after the `Esc`, so the arrows go to the application on screen again. It does nothing in dry run, and nothing if no window was ever seen.
+
 ### On-screen keyboard
 
 `osk:toggle` (action type *Keyboard* in the editor, "On-screen keyboard" in the *Desktop and media* wizard list) opens a keyboard on the screen, driven by the remote: **arrows move the highlight, OK types the key, Back closes it**, the same button closes it too. While it is open the remote's D-pad goes to the keyboard instead of being injected into the application.

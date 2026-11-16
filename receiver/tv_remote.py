@@ -539,15 +539,45 @@ class Focus:
     (D-Bus org.claude.FocusPid, already installed on the machine). Cached for 0.25 s.
     current() is None when the extension is not there or does not answer."""
 
-    def __init__(self):
+    def __init__(self, query=None, activate=None):
         self._val, self._at = None, -99.0
+        self._query_fn = query or self._query
+        self._activate_fn = activate or self._activate
+        self.last = None   # the last window that really had the focus
 
     def current(self):
         now = time.monotonic()
         if now - self._at >= 0.25:
             self._at = now
-            self._val = self._query()
+            self._val = self._query_fn()
+            if self._val and self._val["pid"]:
+                self.last = self._val
         return self._val
+
+    def restore_soon(self, delay=0.25):
+        """Esc was just sent while no window has the focus (the dock after Ctrl+Alt+Tab, the
+        overview, a shell menu): give the focus back to the window that had it before, so the
+        arrow keys go to the application on screen again and not to GNOME. Returns True if a
+        restore was scheduled."""
+        v = self._val
+        if v is None or v["pid"] or not self.last:
+            return False
+        threading.Timer(delay, self._restore, args=(self.last["pid"],)).start()
+        return True
+
+    def _restore(self, pid):
+        print(f"[focus] focus returned to pid {pid}: {self._activate_fn(pid)}", flush=True)
+
+    @staticmethod
+    def _activate(pid):
+        try:
+            r = subprocess.run(
+                ["gdbus", "call", "--session", "--dest", "org.claude.FocusPid",
+                 "--object-path", "/org/claude/FocusPid", "--method", "org.claude.FocusPid.ActivatePid",
+                 str(pid)], capture_output=True, text=True, timeout=1.5, env=session_env())
+            return "true" in r.stdout
+        except (subprocess.TimeoutExpired, OSError):
+            return False
 
     @staticmethod
     def _query():
@@ -598,11 +628,18 @@ class Router:
         self.down_at = {}  # remote key -> monotonic time of the DOWN event (for the hold time)
         self.fired = set()  # remote keys whose long action already fired
 
+    def _after_keys(self, names):
+        """After an Esc: if no window has the focus, hand it back to the last one."""
+        if self.focus is not None and "KEY_ESC" in names \
+                and not getattr(self.out, "is_dry", lambda: False)():
+            self.focus.restore_soon()
+
     def _click(self, names):
         for n in names:
             self.out.key(n, 1)
         for n in reversed(names):
             self.out.key(n, 0)
+        self._after_keys(names)
 
     def _perform(self, action):
         """One-shot execution of an action (click for keys, launch for app/url)."""
@@ -645,11 +682,14 @@ class Router:
                 detail = f"held={held:.2f} result={self._up(key)}"
             else:
                 self.down_at[key] = now
+                # ask which window has the focus BEFORE acting: the app exceptions and the
+                # focus restore after Esc both depend on the state at the moment of the press
+                focused = self.focus.current() if active and self.focus is not None else None
                 decision = self._down(key) if active else "off-screen"
                 dry = "yes" if getattr(self.out, "is_dry", lambda: False)() else "no"
                 detail = f"decision={decision} dry={dry}"
                 if active and self.focus is not None:
-                    detail += f" app={focus_label(self.focus.current())}"
+                    detail += f" app={focus_label(focused)}"
                 if active and self.pointer is not None:
                     detail += f" pointer={self.pointer.hide()}"
             print(f"[seen] {key} {state} screen={'yes' if active else 'no'} {detail}", flush=True)
@@ -679,6 +719,7 @@ class Router:
                 for n in entry["tap"]["keys"]:
                     self.out.key(n, 1)
                 self.holds[key] = entry["tap"]["keys"]
+                self._after_keys(entry["tap"]["keys"])
             else:
                 self._perform(entry["tap"])
             return "tap:" + brief(entry["tap"]) + suffix

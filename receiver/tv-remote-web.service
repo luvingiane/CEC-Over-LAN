@@ -1,0 +1,18 @@
+# systemd USER unit for the pairing web UI (no root needed).
+# Install:
+#   cp tv-remote-web.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now tv-remote-web
+# The access token is created on first start in ~/cec-over-lan/token (mode 0600).
+# Open  http://<machine-ip>:8765/?t=<token>  from a phone on the same network, once;
+# the page then remembers the token.
+[Unit]
+Description=CEC-Over-LAN pairing web UI
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -B %h/cec-over-lan/tv_remote_web.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

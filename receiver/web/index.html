@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CEC-Over-LAN</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --fg:#1b1d21; --muted:#6a707c; --line:#d9dce2;
+          --accent:#2f6fed; --ok:#1c8a4a; --bad:#c9372c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14161a; --card:#1d2026; --fg:#eceef2; --muted:#9aa1ad; --line:#2f343d;
+            --accent:#6b9bff; --ok:#4cc27d; --bad:#ff7b70; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:16px; }
+  h1 { font-size:20px; margin:8px 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:16px; margin-bottom:14px; }
+  .card h2 { font-size:15px; margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:12px; padding:3px 0; }
+  .row span:first-child { color:var(--muted); }
+  .good { color:var(--ok); font-weight:600; } .warn { color:var(--bad); font-weight:600; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input { width:100%; padding:12px; font-size:18px; border:1px solid var(--line);
+          border-radius:8px; background:var(--bg); color:var(--fg); }
+  button { width:100%; margin-top:12px; padding:13px; font-size:16px; font-weight:600;
+           border:0; border-radius:8px; background:var(--accent); color:#fff; }
+  button.alt { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  button:disabled { opacity:.5; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .msg { margin-top:10px; font-size:14px; white-space:pre-wrap; word-break:break-word; }
+  ol { margin:0 0 4px 18px; padding:0; color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CEC-Over-LAN</h1>
+
+  <div class="card">
+    <h2>Status</h2>
+    <div class="row"><span>Receiver service</span><span id="sService">…</span></div>
+    <div class="row"><span>TV link (adb)</span><span id="sLink">…</span></div>
+    <div class="row"><span>Machine on TV screen</span><span id="sScreen">…</span></div>
+    <div class="row"><span>Target</span><span id="sTarget">…</span></div>
+  </div>
+
+  <div class="card">
+    <h2>1. Pair (only if asked)</h2>
+    <ol>
+      <li>On the TV: Developer options, Wireless debugging, turn it on.</li>
+      <li>Tap "Pair device with pairing code".</li>
+    </ol>
+    <label for="host">TV IP address</label>
+    <input id="host" inputmode="decimal" autocomplete="off" placeholder="e.g. 192.168.x.x">
+    <div class="grid">
+      <div><label for="pport">Pairing port</label>
+        <input id="pport" inputmode="numeric" autocomplete="off"></div>
+      <div><label for="code">Code</label>
+        <input id="code" inputmode="numeric" maxlength="6" autocomplete="off"></div>
+    </div>
+    <button id="bPair">Pair</button>
+    <div class="msg" id="mPair"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Connect</h2>
+    <label for="cport">Connection port (main Wireless debugging screen)</label>
+    <input id="cport" inputmode="numeric" autocomplete="off">
+    <button id="bConnect">Connect and restart receiver</button>
+    <button class="alt" id="bFind">Auto-detect ports</button>
+    <div class="msg" id="mConnect"></div>
+  </div>
+
+  <div class="card">
+    <h2>Receiver service</h2>
+    <div class="grid">
+      <button class="alt" data-svc="restart">Restart</button>
+      <button class="alt" data-svc="stop">Stop</button>
+    </div>
+    <div class="msg" id="mSvc"></div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let token = new URLSearchParams(location.search).get('t');
+try {
+  if (token) { localStorage.setItem('cecToken', token); history.replaceState(null, '', location.pathname); }
+  else token = localStorage.getItem('cecToken');
+} catch (e) {}
+if (!token) token = prompt('Access token (on the machine: cat ~/cec-over-lan/token)') || '';
+try { localStorage.setItem('cecToken', token); } catch (e) {}
+
+async function api(path, body) {
+  const opt = { headers: { 'X-Token': token } };
+  if (body) { opt.method = 'POST'; opt.body = JSON.stringify(body); opt.headers['Content-Type'] = 'application/json'; }
+  const r = await fetch(path, opt);
+  if (r.status === 401) { try { localStorage.removeItem('cecToken'); } catch (e) {}
+    throw new Error('Bad token: reload the page and enter it again'); }
+  return r.json();
+}
+function setClass(el, text, good) { el.textContent = text; el.className = good ? 'good' : 'warn'; }
+
+async function refresh() {
+  try {
+    const s = await api('/api/status');
+    setClass($('sService'), s.service, s.service === 'active');
+    setClass($('sLink'), s.link, s.link === 'device');
+    setClass($('sScreen'), s.on_screen, s.on_screen === 'yes');
+    $('sTarget').textContent = s.target || 'not set';
+    if (s.target && !$('host').value) {
+      const [h, p] = s.target.split(':'); $('host').value = h; if (!$('cport').value) $('cport').value = p;
+    }
+  } catch (e) { $('sService').textContent = e.message; }
+}
+async function act(btn, out, path, body, after) {
+  btn.disabled = true; out.textContent = 'Working…';
+  try { const r = await api(path, body);
+        out.textContent = (r.ok ? 'OK: ' : 'Failed: ') + (r.message || ''); out.className = 'msg ' + (r.ok ? 'good' : 'warn');
+        if (after) after(r); }
+  catch (e) { out.textContent = e.message; out.className = 'msg warn'; }
+  btn.disabled = false; refresh();
+}
+$('bPair').onclick = () => act($('bPair'), $('mPair'), '/api/pair',
+  { host: $('host').value.trim(), port: parseInt($('pport').value, 10), code: $('code').value.trim() },
+  r => { if (r.ok) $('code').value = ''; });
+$('bConnect').onclick = () => act($('bConnect'), $('mConnect'), '/api/connect',
+  { host: $('host').value.trim(), port: parseInt($('cport').value, 10) });
+$('bFind').onclick = () => act($('bFind'), $('mConnect'), '/api/discover', null, r => {
+  if (r.found) { if (r.found.host) $('host').value = r.found.host;
+    if (r.found.pair_port) $('pport').value = r.found.pair_port;
+    if (r.found.connect_port) $('cport').value = r.found.connect_port; } });
+document.querySelectorAll('[data-svc]').forEach(b => b.onclick = () =>
+  act(b, $('mSvc'), '/api/service', { action: b.dataset.svc }));
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>

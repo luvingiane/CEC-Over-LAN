@@ -43,6 +43,22 @@ python3 receiver/tv_remote.py --target <TV_IP>:<PORT> --no-gate   # always injec
 
 As a service: see `receiver/tv-remote.service` (user unit, `Restart=always`).
 
+## Pairing from a phone (web UI)
+
+After a TV reboot or standby the wireless debugging port and pairing are lost (T4/T6). `receiver/tv_remote_web.py` serves a small mobile page on the LAN to redo them from a phone:
+
+```bash
+cp receiver/tv-remote.service receiver/tv-remote-web.service ~/.config/systemd/user/
+mkdir -p ~/cec-over-lan && cp receiver/tv_remote.py receiver/tv_remote_web.py ~/cec-over-lan/ && cp -r receiver/web ~/cec-over-lan/
+echo 'TV_TARGET=<TV_IP>:<PORT>' > ~/cec-over-lan/tv-remote.env
+systemctl --user daemon-reload && systemctl --user enable --now tv-remote tv-remote-web
+cat ~/cec-over-lan/token          # access token, created on first start (mode 0600)
+```
+
+Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
+
+Security: it answers only to private (RFC 1918) addresses, every API call needs the token, inputs are validated and no shell is used. It is meant for a trusted home LAN: do not forward its port to the internet.
+
 ## Known limits
 
 - The wireless debugging port can change: after a TV reboot the old port was `offline` (see T6 in REPORT.md), so a new `adb connect` is needed.

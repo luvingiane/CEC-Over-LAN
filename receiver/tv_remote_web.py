@@ -22,9 +22,10 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -90,7 +91,7 @@ def write_target(target):
     os.replace(tmp, ENV_FILE)
 
 
-def status():
+def status(_q=None):
     target = read_target()
     _, active = run(["systemctl", "--user", "is-active", SERVICE], 5)
     link = "unknown"
@@ -106,7 +107,7 @@ def status():
     return {"target": target, "service": active, "link": link, "on_screen": on_screen}
 
 
-def discover():
+def discover(_q=None):
     """Best effort: read adb's mDNS list (needs the Wireless debugging screens open on the TV)."""
     _, out = run(["adb", "mdns", "services"], 8)
     found = {"host": "", "pair_port": 0, "connect_port": 0}
@@ -183,15 +184,94 @@ def to_file_format(entries):
     for key, spec in entries.items():
         item = {}
         if spec["tap"]:
-            item["tap"] = "+".join(spec["tap"])
+            item["tap"] = core.action_to_text(spec["tap"])
         if spec["long"]:
-            item["long"] = "+".join(spec["long"])
+            item["long"] = core.action_to_text(spec["long"])
             item["hold"] = spec["hold"]
         out[key] = item
     return out
 
 
-def get_keymap():
+def parse_desktop(path):
+    """Name of a launchable application from a .desktop file, or None."""
+    try:
+        text = path.read_text(errors="replace")
+    except OSError:
+        return None
+    name, kind, in_entry = None, None, False
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            in_entry = line == "[Desktop Entry]"
+            continue
+        if not in_entry or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        if k == "Name":
+            name = v
+        elif k == "Type":
+            kind = v
+        elif k in ("NoDisplay", "Hidden") and v.strip().lower() == "true":
+            return None
+    if kind != "Application" or not name:
+        return None
+    return {"id": path.name, "name": name}
+
+
+def list_apps(_q=None):
+    """Installed applications that can be launched from a key (.desktop files)."""
+    apps = {}
+    for d in core.APP_DIRS:
+        try:
+            files = sorted(d.glob("*.desktop"))
+        except OSError:
+            continue
+        for p in files:
+            if p.name not in apps and core.DESKTOP_ID.match(p.name):
+                info = parse_desktop(p)
+                if info:
+                    apps[p.name] = info
+    return {"ok": True, "apps": sorted(apps.values(), key=lambda a: a["name"].lower())}
+
+
+EVENT = re.compile(r"^(\d+\.\d+)\s+\S+\s+\S+?:\s+\[seen\] (KEY_[A-Z0-9_]+) DOWN$")
+EVENT_FILE_LINE = re.compile(r"^(\d+\.\d+)\s+\[seen\] (KEY_[A-Z0-9_]+) DOWN$")
+
+
+def events(q):
+    """Key presses seen by the receiver after a given server timestamp (wizard)."""
+    try:
+        after = float(q.get("after", [time.time() - 5])[0])
+    except (ValueError, IndexError):
+        after = time.time() - 5
+    found = []
+    test_file = os.environ.get("CEC_EVENTS_FILE")  # test hook: "<ts> [seen] KEY_X DOWN" lines
+    if test_file:
+        try:
+            lines = Path(test_file).read_text().splitlines()
+        except OSError:
+            lines = []
+        pattern = EVENT_FILE_LINE
+    else:
+        _, out = run(["journalctl", "--user", "-u", SERVICE, "--since", f"@{int(after)}",
+                      "-o", "short-unix", "--no-pager"], 5)
+        lines, pattern = out.splitlines(), EVENT
+    for line in lines:
+        m = pattern.match(line.strip())
+        if m and float(m.group(1)) > after:
+            found.append({"ts": float(m.group(1)), "key": m.group(2)})
+    return {"ok": True, "now": time.time(), "events": found[-50:]}
+
+
+def profiles(_q=None):
+    """Lists of commands (ES-DE, desktop/media, numbers) used by the setup wizard."""
+    try:
+        return {"ok": True, **json.loads((HERE / "web" / "profiles.json").read_text())}
+    except (OSError, ValueError):
+        return {"ok": False, "message": "profiles.json is missing or broken", "profiles": []}
+
+
+def get_keymap(_q=None):
     defaults = core.default_keymap()
     source, keys = "defaults", defaults
     try:
@@ -208,6 +288,11 @@ def do_keymap(data):
     if not isinstance(raw, dict) or len(raw) > 200:
         return {"ok": False, "message": "invalid mapping"}
     entries, errors = core.normalise(raw)
+    for key, spec in entries.items():
+        for slot in ("tap", "long"):
+            act = spec[slot]
+            if act and act["type"] == "app" and core.desktop_path(act["id"]) is None:
+                errors.append(f"{key}: application {act['id']} is not installed")
     if errors:
         return {"ok": False, "message": "; ".join(errors[:5])}
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -227,7 +312,7 @@ def do_keymap_reset(_data):
     return {"ok": True, "message": "back to the built-in defaults"}
 
 
-def recent():
+def recent(_q=None):
     """Remote keys the receiver saw in the last 90 s, newest first."""
     _, journal = run(["journalctl", "--user", "-u", SERVICE, "--since", "-90s", "-o", "cat",
                       "--no-pager"], 5)
@@ -242,7 +327,8 @@ def recent():
 POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service,
         "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset}
 GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
-       "/api/recent": recent}
+       "/api/recent": recent, "/api/apps": list_apps, "/api/events": events,
+       "/api/profiles": profiles}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -281,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in GET:
             if not self._authed():
                 return self._send(401, {"ok": False, "message": "bad token"})
-            return self._send(200, GET[path]())
+            return self._send(200, GET[path](parse_qs(urlparse(self.path).query)))
         self._send(404, {"ok": False, "message": "not found"})
 
     def do_POST(self):

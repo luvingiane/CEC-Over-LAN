@@ -11,7 +11,7 @@ is reloaded automatically when it changes; the web UI edits it. Without that
 file the built-in default mapping is used.
 
 Usage:
-  tv_remote.py --target <IP:port> --dry-run     # print only, inject nothing
+  tv_remote.py --target <IP:port> --dry-run     # print only, inject/launch nothing
   tv_remote.py --target <IP:port>               # inject, only while the TV shows this machine
   tv_remote.py --target <IP:port> --no-gate     # always inject (no source check)
 
@@ -19,10 +19,14 @@ keymap.json format:
   {"version": 1, "keys": {
       "KEY_SELECT":  {"tap": "KEY_ENTER"},
       "KEY_EJECTCD": {"long": "KEY_LEFTALT+KEY_F4", "hold": 3.0},
-      "KEY_8":       {"tap": "KEY_8", "long": "KEY_LEFTCTRL+KEY_8", "hold": 1.0}}}
-  "tap": key or "+"-joined combo, pressed on DOWN and released on UP (or clicked
-         on release when a "long" action also exists and the hold time was not reached).
-  "long": combo fired once after "hold" seconds (default 3).
+      "KEY_8":       {"tap": "KEY_8", "long": "KEY_LEFTCTRL+KEY_8", "hold": 1.0},
+      "KEY_FIND":    {"tap": "app:kodi.desktop", "long": "url:https://example.org/"}}}
+  An action is one of:
+    "KEY_A" or "KEY_LEFTCTRL+KEY_C"  keys, pressed on DOWN and released on UP
+                                       (clicked on release when a "long" action also exists)
+    "app:<file>.desktop"              launch an installed application (gio launch)
+    "url:http(s)://..."               open a web page with the default browser (xdg-open)
+  "long" fires once after "hold" seconds (default 3). No free-form commands are accepted.
 """
 import argparse
 import json
@@ -33,13 +37,21 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 LINE = re.compile(r"/dev/input/event\d+:\s+EV_KEY\s+(KEY_\w+)\s+(DOWN|UP)\b")
 PATH = re.compile(r"mActiveRoutingPath:\s*(0x[0-9a-fA-F]+)")
 KEY_NAME = re.compile(r"^KEY_[A-Z0-9_]+$")
+DESKTOP_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.desktop$")
+URL_RE = re.compile(r"^https?://[^\s\x00-\x1f\x7f]{1,2000}$")
 STATE_DIR = Path(os.environ.get("CEC_STATE_DIR", Path.home() / "cec-over-lan"))
 KEYMAP_FILE = STATE_DIR / "keymap.json"
+APP_DIRS = [Path("/usr/share/applications"), Path("/usr/local/share/applications"),
+            Path.home() / ".local/share/applications",
+            Path("/var/lib/flatpak/exports/share/applications"),
+            Path.home() / ".local/share/flatpak/exports/share/applications"]
 DEFAULT_HOLD = 3.0
+LAUNCH_DEBOUNCE_S = 1.5
 # never injectable: they would suspend/power off the machine
 DENY_TARGETS = {"KEY_POWER", "KEY_SLEEP", "KEY_SUSPEND", "KEY_RESTART", "KEY_WAKEUP",
                 "KEY_POWER2", "KEY_COFFEE"}
@@ -69,6 +81,83 @@ def parse_combo(text):
     return names
 
 
+def parse_action(text):
+    """Text -> {"type": "keys"|"app"|"url", ...} or None when invalid."""
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    if text.startswith("app:"):
+        app = text[4:].strip()
+        return {"type": "app", "id": app} if DESKTOP_ID.match(app) else None
+    if text.startswith("url:"):
+        url = text[4:].strip()
+        return {"type": "url", "url": url} if URL_RE.match(url) else None
+    keys = parse_combo(text)
+    return {"type": "keys", "keys": keys} if keys else None
+
+
+def action_to_text(action):
+    if action["type"] == "keys":
+        return "+".join(action["keys"])
+    if action["type"] == "app":
+        return "app:" + action["id"]
+    return "url:" + action["url"]
+
+
+def desktop_path(app_id):
+    """Path of an installed .desktop file, or None."""
+    if not DESKTOP_ID.match(app_id or ""):
+        return None
+    for d in APP_DIRS:
+        p = d / app_id
+        if p.is_file():
+            return p
+    return None
+
+
+_SESSION_ENV = {}
+
+
+def session_env():
+    """Environment for launched GUI programs: the graphical session variables of systemd --user."""
+    if not _SESSION_ENV:
+        env = dict(os.environ)
+        try:
+            out = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True,
+                                 text=True, timeout=5).stdout
+            for line in out.splitlines():
+                k, _, v = line.partition("=")
+                if k in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
+                         "XDG_CURRENT_DESKTOP", "XAUTHORITY"):
+                    env.setdefault(k, v)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        _SESSION_ENV.update(env)
+    return _SESSION_ENV
+
+
+def launch(action, dry_run=False):
+    """Start an installed application or open a URL. No shell, no free-form command."""
+    if action["type"] == "app":
+        path = desktop_path(action["id"])
+        if path is None:
+            print(f"[launch] unknown application {action['id']}", flush=True)
+            return
+        cmd, what = ["gio", "launch", str(path)], f"app {action['id']}"
+    else:
+        cmd, what = ["xdg-open", action["url"]], f"url {urlparse(action['url']).netloc}"
+    print(f"[launch] {what}{' (dry-run)' if dry_run else ''}", flush=True)
+    if dry_run:
+        return
+    try:
+        proc = subprocess.Popen(cmd, env=session_env(), start_new_session=True,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+        threading.Thread(target=proc.wait, daemon=True).start()  # reap, no zombies
+    except OSError as exc:
+        print(f"[launch] failed: {exc}", flush=True)
+
+
 def default_keymap(back_key="KEY_BACKSPACE"):
     return {
         "KEY_UP": {"tap": "KEY_UP"},
@@ -96,8 +185,8 @@ def normalise(raw):
         if not (isinstance(key, str) and KEY_NAME.match(key)) or not isinstance(spec, dict):
             errors.append(f"{key}: invalid remote key or spec")
             continue
-        tap = parse_combo(spec["tap"]) if spec.get("tap") else None
-        long_ = parse_combo(spec["long"]) if spec.get("long") else None
+        tap = parse_action(spec["tap"]) if spec.get("tap") else None
+        long_ = parse_action(spec["long"]) if spec.get("long") else None
         if spec.get("tap") and tap is None:
             errors.append(f"{key}: invalid tap action")
             continue
@@ -192,15 +281,16 @@ class Out:
 
 
 class Router:
-    """Turns remote key events into injected keys following the keymap."""
+    """Turns remote key events into injected keys / launches following the keymap."""
 
-    def __init__(self, keymap, out):
+    def __init__(self, keymap, out, launcher=None):
         self.keymap = keymap
         self.out = out
+        self.launcher = launcher or (lambda action: launch(action, out.dry))
         self.lock = threading.RLock()
         self.holds = {}   # remote key -> injected names currently held down
         self.timers = {}  # remote key -> pending long-press Timer
-        self.fired = set()  # remote keys whose long action already fired
+        self.last_launch = {}
 
     def _click(self, names):
         for n in names:
@@ -208,11 +298,22 @@ class Router:
         for n in reversed(names):
             self.out.key(n, 0)
 
-    def _fire_long(self, key, names):
+    def _perform(self, action):
+        """One-shot execution of an action (click for keys, launch for app/url)."""
+        if action["type"] == "keys":
+            self._click(action["keys"])
+            return
+        text = action_to_text(action)
+        now = time.monotonic()
+        if now - self.last_launch.get(text, -99) < LAUNCH_DEBOUNCE_S:
+            return
+        self.last_launch[text] = now
+        self.launcher(action)
+
+    def _fire_long(self, key, action):
         with self.lock:
             if self.timers.pop(key, None) is not None:
-                self.fired.add(key)
-                self._click(names)
+                self._perform(action)
 
     def on_event(self, key, state, active):
         print(f"[seen] {key} {state}", flush=True)
@@ -226,15 +327,17 @@ class Router:
         entry = self.keymap.get(key)
         if not entry:
             return
-        self.fired.discard(key)
         if entry["long"]:
             t = threading.Timer(entry["hold"], self._fire_long, args=(key, entry["long"]))
             self.timers[key] = t
             t.start()
         elif entry["tap"]:
-            for n in entry["tap"]:
-                self.out.key(n, 1)
-            self.holds[key] = entry["tap"]
+            if entry["tap"]["type"] == "keys":
+                for n in entry["tap"]["keys"]:
+                    self.out.key(n, 1)
+                self.holds[key] = entry["tap"]["keys"]
+            else:
+                self._perform(entry["tap"])
 
     def _up(self, key):
         t = self.timers.pop(key, None)
@@ -242,12 +345,11 @@ class Router:
             t.cancel()
             entry = self.keymap.get(key)
             if entry and entry["tap"]:
-                self._click(entry["tap"])
+                self._perform(entry["tap"])
         names = self.holds.pop(key, None)
         if names:
             for n in reversed(names):
                 self.out.key(n, 0)
-        self.fired.discard(key)
 
     def release_all(self):
         with self.lock:
@@ -258,7 +360,6 @@ class Router:
                 for n in reversed(names):
                     self.out.key(n, 0)
             self.holds.clear()
-            self.fired.clear()
 
 
 class Gate:
@@ -360,7 +461,7 @@ def run(args):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--target", required=True, help="IP:port of the wireless debugging connection")
-    p.add_argument("--dry-run", action="store_true", help="print what would be injected")
+    p.add_argument("--dry-run", action="store_true", help="print what would be injected/launched")
     p.add_argument("--keymap", default=str(KEYMAP_FILE), help="path of keymap.json")
     p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"],
                    help="Back key of the built-in default mapping")

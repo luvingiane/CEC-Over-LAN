@@ -61,12 +61,25 @@ cat ~/cec-over-lan/token          # access token, created on first start (mode 0
 
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 
+### Setup wizard
+
+The *Setup wizard* card walks through the whole mapping in four steps, so you never have to know the key names:
+
+1. **Discover**: press every button on the remote. Nothing is recorded or changed; the page only shows which buttons exist (with a counter) and what the machine receives. A button that never shows up is consumed by the TV and cannot be used.
+2. **Assign**: pick the command lists to go through (ES-DE, Desktop and media, Number keys 0-9; defined in `receiver/web/profiles.json`, the ES-DE one comes from its user guide). For each command the page asks you to press the remote button you want for it. Skip and Back are available; a button already used for the same kind of action is refused.
+3. **Shortcuts** (optional): press a button, then bind it to an installed **application** or a **website**, on tap or on long press.
+4. **Review and save**: replace the current mapping or add to it.
+
 ### Key mapping
 
 The *Key mapping* card edits `~/cec-over-lan/keymap.json`, which the receiver reloads by itself within a second (no restart):
 
 - Press a key on the remote with the machine on screen: it appears as a chip under the card title; tap it to add a row. *Add numbers 0–9* adds the ten digits.
-- **Tap** is what is pressed on the machine. It can be a combo joined with `+`, e.g. `KEY_LEFTCTRL+KEY_C`.
+- **Tap** is what is done on the machine. An action is one of:
+  - keys, or a combo joined with `+`, e.g. `KEY_LEFTCTRL+KEY_C`;
+  - `app:<file>.desktop`: launch an installed application (`gio launch`), chosen from the list of installed `.desktop` files;
+  - `url:https://…`: open a web page with the default browser (`xdg-open`). Only `http://` and `https://` are accepted.
+  Launches happen once per press (repeats within 1.5 s are ignored) and, like keys, only while the machine is on the TV screen. Free-form commands are not accepted on purpose.
 - **Long press** fires once after the **hold** time (0.3–10 s, default 3). With only a long action, a short press does nothing; with both, a short press clicks the tap action and a long one fires the long action only.
 - Any `KEY_*` name known to Linux evdev can be a target (518 on the test machine). Power actions (`KEY_POWER`, `KEY_SLEEP`, `KEY_SUSPEND`, `KEY_RESTART`, `KEY_WAKEUP`) are refused on purpose.
 - *Reset to defaults* deletes the file; the built-in mapping above applies again.
@@ -77,10 +90,11 @@ File format:
 {"version": 1, "keys": {
   "KEY_SELECT":  {"tap": "KEY_ENTER"},
   "KEY_EJECTCD": {"long": "KEY_LEFTALT+KEY_F4", "hold": 3.0},
-  "KEY_8":       {"tap": "KEY_8", "long": "KEY_LEFTCTRL+KEY_8", "hold": 1.0}}}
+  "KEY_8":       {"tap": "KEY_8", "long": "KEY_LEFTCTRL+KEY_8", "hold": 1.0},
+  "KEY_FIND":    {"tap": "app:kodi.desktop", "long": "url:https://example.org/", "hold": 1.0}}}
 ```
 
-Security: it answers only to private (RFC 1918) addresses, every API call needs the token, inputs are validated and no shell is used. It is meant for a trusted home LAN: do not forward its port to the internet.
+Security: it answers only to private (RFC 1918) addresses, every API call needs the token, inputs are validated and no shell is used. Anyone who has the token can pair/connect adb, restart the service, and bind keys to launch **any installed application** or open **any http(s) address** on the machine (but not run arbitrary commands). It is meant for a trusted home LAN: do not forward its port to the internet.
 
 ## Tests
 

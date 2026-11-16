@@ -28,7 +28,10 @@ def make_router(raw=None):
         path.write_text(json.dumps({"version": 1, "keys": raw}))
     keymap = core.Keymap(path, "KEY_BACKSPACE")
     out = FakeOut()
-    return core.Router(keymap, out), out, path
+    launches = []
+    router = core.Router(keymap, out, launcher=launches.append)
+    router.launches = launches
+    return router, out, path
 
 
 class Normalise(unittest.TestCase):
@@ -43,7 +46,8 @@ class Normalise(unittest.TestCase):
             "KEY_W": {},                            # no action
         })
         self.assertEqual(set(entries), {"KEY_8", "KEY_EJECTCD"})
-        self.assertEqual(entries["KEY_EJECTCD"]["long"], ["KEY_LEFTALT", "KEY_F4"])
+        self.assertEqual(entries["KEY_EJECTCD"]["long"],
+                         {"type": "keys", "keys": ["KEY_LEFTALT", "KEY_F4"]})
         self.assertEqual(len(errors), 5)
 
     def test_combo_limits(self):
@@ -110,6 +114,54 @@ class Routing(unittest.TestCase):
         router.on_event("KEY_UP", "DOWN", True)
         router.release_all()
         self.assertEqual(out.events, [("KEY_UP", 1), ("KEY_UP", 0)])
+
+
+class Actions(unittest.TestCase):
+    def test_parse_action_kinds(self):
+        self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})
+        self.assertEqual(core.parse_action("app:kodi.desktop"), {"type": "app", "id": "kodi.desktop"})
+        self.assertEqual(core.parse_action("url:https://example.org/a?b=1;c"),
+                         {"type": "url", "url": "https://example.org/a?b=1;c"})
+        self.assertEqual(core.action_to_text(core.parse_action("app:kodi.desktop")), "app:kodi.desktop")
+
+    def test_dangerous_input_is_rejected(self):
+        for bad in ("url:javascript:alert(1)", "url:file:///etc/passwd", "url:http://a b/",
+                    "url:https://x\nhttps://y", "url:ftp://example.org/", "app:../../bin/sh.desktop",
+                    "app:kodi", "app:a b.desktop", "app:$(id).desktop", "app:", "url:", "ls -la",
+                    "KEY_A;reboot"):
+            self.assertIsNone(core.parse_action(bad), bad)
+
+    def test_desktop_path_rejects_traversal(self):
+        self.assertIsNone(core.desktop_path("../../etc/passwd"))
+        self.assertIsNone(core.desktop_path("nonexistent-app.desktop"))
+
+    def test_app_tap_launches_once_on_down_and_debounces(self):
+        router, out, _ = make_router({"KEY_FIND": {"tap": "app:kodi.desktop"}})
+        router.on_event("KEY_FIND", "DOWN", True)
+        router.on_event("KEY_FIND", "UP", True)
+        router.on_event("KEY_FIND", "DOWN", True)   # within the debounce window: ignored
+        router.on_event("KEY_FIND", "UP", True)
+        self.assertEqual(router.launches, [{"type": "app", "id": "kodi.desktop"}])
+        self.assertEqual(out.events, [])
+
+    def test_launch_not_fired_when_source_inactive(self):
+        router, _, _ = make_router({"KEY_FIND": {"tap": "url:https://example.org/"}})
+        router.on_event("KEY_FIND", "DOWN", False)
+        router.on_event("KEY_FIND", "UP", False)
+        self.assertEqual(router.launches, [])
+
+    def test_url_on_long_press_and_key_on_tap(self):
+        router, out, _ = make_router({"KEY_8": {"tap": "KEY_8", "long": "url:https://example.org/",
+                                                "hold": 0.3}})
+        router.on_event("KEY_8", "DOWN", True)
+        router.on_event("KEY_8", "UP", True)        # short -> key click only
+        self.assertEqual(out.events, [("KEY_8", 1), ("KEY_8", 0)])
+        self.assertEqual(router.launches, [])
+        router.on_event("KEY_8", "DOWN", True)      # long -> launch only
+        time.sleep(0.6)
+        router.on_event("KEY_8", "UP", True)
+        self.assertEqual(router.launches, [{"type": "url", "url": "https://example.org/"}])
+        self.assertEqual(out.events, [("KEY_8", 1), ("KEY_8", 0)])
 
 
 @unittest.skipIf(core.e is None, "python-evdev not installed")

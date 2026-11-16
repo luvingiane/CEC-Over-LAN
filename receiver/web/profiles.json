@@ -1,0 +1,67 @@
+{
+  "profiles": [
+    {
+      "id": "esde",
+      "name": "ES-DE",
+      "default": true,
+      "source": "ES-DE USERGUIDE.md, section \"Default keyboard mappings\" (lines 646-707)",
+      "actions": [
+        {"id": "up", "label": "Up", "help": "Navigate up in lists, grids and menus", "target": "KEY_UP"},
+        {"id": "down", "label": "Down", "help": "Navigate down in lists, grids and menus", "target": "KEY_DOWN"},
+        {"id": "left", "label": "Left", "help": "Navigate left between systems and games", "target": "KEY_LEFT"},
+        {"id": "right", "label": "Right", "help": "Navigate right between systems and games", "target": "KEY_RIGHT"},
+        {"id": "a", "label": "A: select / launch game", "help": "Open gamelists, launch games, confirm in menus (Enter)", "target": "KEY_ENTER"},
+        {"id": "b", "label": "B: back", "help": "Go back. The guide only says \"Back key\"; Backspace is our assumption", "target": "KEY_BACKSPACE"},
+        {"id": "start", "label": "Start: main menu", "help": "Open and close the main menu (Escape)", "target": "KEY_ESC"},
+        {"id": "options", "label": "Back button: gamelist options", "help": "Open and close the gamelist options menu (F1)", "target": "KEY_F1"},
+        {"id": "lshoulder", "label": "Left shoulder: page up", "help": "Jump 10 games in gamelists, 6 entries in menus (Page Up)", "target": "KEY_PAGEUP"},
+        {"id": "rshoulder", "label": "Right shoulder: page down", "help": "Jump 10 games in gamelists, 6 entries in menus (Page Down)", "target": "KEY_PAGEDOWN"},
+        {"id": "ltrigger", "label": "Left trigger: first entry", "help": "Jump to the first entry (Home)", "target": "KEY_HOME"},
+        {"id": "rtrigger", "label": "Right trigger: last entry", "help": "Jump to the last entry (End)", "target": "KEY_END"},
+        {"id": "x", "label": "X: media viewer / screensaver", "help": "Media viewer in a gamelist, screensaver in the systems view (Delete)", "target": "KEY_DELETE"},
+        {"id": "y", "label": "Y: favourite", "help": "Mark a game as favourite, if \"Enable toggle favorites button\" is on (Insert)", "target": "KEY_INSERT"},
+        {"id": "random_l", "label": "Random game or system (left stick click)", "help": "Only if the \"Random entry button\" option is configured (F2)", "target": "KEY_F2"},
+        {"id": "random_r", "label": "Random game or system (right stick click)", "help": "Only if the \"Random entry button\" option is configured (F3)", "target": "KEY_F3"},
+        {"id": "quit", "label": "Quit ES-DE (hold)", "help": "Alt+F4 closes the application; a long press avoids accidents", "target": "KEY_LEFTALT+KEY_F4", "slot": "long", "hold": 3}
+      ]
+    },
+    {
+      "id": "desktop",
+      "name": "Desktop and media",
+      "default": false,
+      "source": "Linux evdev key names; overview and Alt+Tab as configured by GNOME Shell 48 on the test machine",
+      "actions": [
+        {"id": "overview", "label": "GNOME overview", "help": "Super key: shows all windows, pick one with arrows and Enter", "target": "KEY_LEFTMETA"},
+        {"id": "alttab", "label": "Switch to the previous window", "help": "Alt+Tab from one key only toggles the last two windows", "target": "KEY_LEFTALT+KEY_TAB"},
+        {"id": "playpause", "label": "Play / pause", "help": "Media play/pause", "target": "KEY_PLAYPAUSE"},
+        {"id": "next", "label": "Next track", "help": "Media next", "target": "KEY_NEXTSONG"},
+        {"id": "prev", "label": "Previous track", "help": "Media previous", "target": "KEY_PREVIOUSSONG"},
+        {"id": "ff", "label": "Fast forward", "help": "Media fast forward", "target": "KEY_FASTFORWARD"},
+        {"id": "rew", "label": "Rewind", "help": "Media rewind", "target": "KEY_REWIND"},
+        {"id": "home", "label": "Home page", "help": "Home page key", "target": "KEY_HOMEPAGE"},
+        {"id": "esc", "label": "Escape", "help": "Escape key", "target": "KEY_ESC"},
+        {"id": "enter", "label": "Enter", "help": "Enter key", "target": "KEY_ENTER"},
+        {"id": "backspace", "label": "Backspace", "help": "Backspace key", "target": "KEY_BACKSPACE"},
+        {"id": "f11", "label": "Full screen (F11)", "help": "Toggle full screen in many programs", "target": "KEY_F11"}
+      ]
+    },
+    {
+      "id": "numbers",
+      "name": "Number keys 0-9",
+      "default": false,
+      "source": "Linux evdev key names",
+      "actions": [
+        {"id": "n1", "label": "1", "help": "Digit 1", "target": "KEY_1"},
+        {"id": "n2", "label": "2", "help": "Digit 2", "target": "KEY_2"},
+        {"id": "n3", "label": "3", "help": "Digit 3", "target": "KEY_3"},
+        {"id": "n4", "label": "4", "help": "Digit 4", "target": "KEY_4"},
+        {"id": "n5", "label": "5", "help": "Digit 5", "target": "KEY_5"},
+        {"id": "n6", "label": "6", "help": "Digit 6", "target": "KEY_6"},
+        {"id": "n7", "label": "7", "help": "Digit 7", "target": "KEY_7"},
+        {"id": "n8", "label": "8", "help": "Digit 8", "target": "KEY_8"},
+        {"id": "n9", "label": "9", "help": "Digit 9", "target": "KEY_9"},
+        {"id": "n0", "label": "0", "help": "Digit 0", "target": "KEY_0"}
+      ]
+    }
+  ]
+}

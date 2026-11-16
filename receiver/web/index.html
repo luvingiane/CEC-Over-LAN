@@ -18,11 +18,12 @@
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
           padding:16px; margin-bottom:14px; }
   .card h2 { font-size:15px; margin:0 0 10px; }
+  .card h3 { font-size:18px; margin:6px 0; }
   .row { display:flex; justify-content:space-between; gap:12px; padding:3px 0; }
   .row span:first-child { color:var(--muted); }
   .good { color:var(--ok); font-weight:600; } .warn { color:var(--bad); font-weight:600; }
   label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
-  input { width:100%; padding:12px; font-size:18px; border:1px solid var(--line);
+  input, select { width:100%; padding:12px; font-size:18px; border:1px solid var(--line);
           border-radius:8px; background:var(--bg); color:var(--fg); }
   button { width:100%; margin-top:12px; padding:13px; font-size:16px; font-weight:600;
            border:0; border-radius:8px; background:var(--accent); color:#fff; }
@@ -35,13 +36,25 @@
   .chips { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
   .chip { width:auto; margin:0; padding:8px 12px; border:1px solid var(--line); border-radius:999px;
           background:var(--bg); color:var(--fg); font-size:14px; font-weight:500; }
+  .chip b { color:var(--accent); margin-left:6px; }
+  .big { font-size:28px; font-weight:700; text-align:center; padding:14px 0; min-height:70px;
+         color:var(--accent); word-break:break-word; }
   .rowcard { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:10px 0; }
   .rowhead { display:flex; justify-content:space-between; align-items:center; font-weight:600; }
   .rowhead small { color:var(--muted); font-weight:400; margin-left:6px; }
   .x { width:auto; margin:0; padding:0 10px; background:transparent; color:var(--bad);
        border:0; font-size:22px; line-height:1; }
-  .rowcard input { font-size:16px; padding:10px; }
+  .rowcard input, .rowcard select, .wiz input, .wiz select { font-size:16px; padding:10px; }
   .rowcard .grid { grid-template-columns:2fr 1fr; align-items:end; }
+  .act { display:grid; grid-template-columns:110px 1fr; gap:8px; }
+  .bar { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin:8px 0; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top;
+           word-break:break-word; }
+  th { color:var(--muted); font-weight:500; }
+  .radio { display:flex; gap:10px; align-items:flex-start; margin:8px 0; font-size:14px; }
+  .radio input { width:auto; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -83,11 +96,16 @@
     <div class="msg" id="mConnect"></div>
   </div>
 
+  <div class="card wiz" id="wizCard">
+    <h2>3. Setup wizard</h2>
+    <div id="wiz"></div>
+  </div>
+
   <div class="card">
     <h2>Key mapping</h2>
     <div class="hint">Press a key on the remote (with the machine on screen): it shows up here. Tap it to add a row.
-      <b>Tap</b> = what is pressed on the machine; <b>Long press</b> = fired once after the hold time
-      (leave empty if you don't need it). Combos use +, e.g. KEY_LEFTCTRL+KEY_C.</div>
+      Each key has a <b>Tap</b> action and, if you want, a <b>Long press</b> action (fired once after the hold time).
+      An action can press keys (combos use +, e.g. KEY_LEFTCTRL+KEY_C), launch an <b>App</b> or open a <b>Website</b>.</div>
     <div class="chips" id="recent"><span class="hint">no keys seen yet</span></div>
     <div id="rows"></div>
     <div class="grid">
@@ -128,8 +146,13 @@ async function api(path, body) {
     throw new Error('Bad token: reload the page and enter it again'); }
   return r.json();
 }
-function setClass(el, text, good) { el.textContent = text; el.className = good ? 'good' : 'warn'; }
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag); Object.assign(n, props || {});
+  kids.forEach(k => n.append(k)); return n;
+}
+function setClass(elm, text, good) { elm.textContent = text; elm.className = good ? 'good' : 'warn'; }
 
+// ---------- status, pairing, connection ----------
 async function refresh() {
   try {
     const s = await api('/api/status');
@@ -161,48 +184,94 @@ $('bFind').onclick = () => act($('bFind'), $('mConnect'), '/api/discover', null,
     if (r.found.connect_port) $('cport').value = r.found.connect_port; } });
 document.querySelectorAll('[data-svc]').forEach(b => b.onclick = () =>
   act(b, $('mSvc'), '/api/service', { action: b.dataset.svc }));
-// ---- key mapping ----
+
+// ---------- shared: labels, apps, action editor ----------
 const LABELS = { KEY_UP:'Up', KEY_DOWN:'Down', KEY_LEFT:'Left', KEY_RIGHT:'Right', KEY_SELECT:'OK',
   KEY_BACK:'Back', KEY_EXIT:'Exit', KEY_STOPCD:'Red', KEY_EJECTCD:'Green', KEY_SHUFFLE:'Yellow',
   KEY_SEARCH:'Blue', KEY_CHANNELUP:'Channel +', KEY_CHANNELDOWN:'Channel -', KEY_FIND:'TTX?',
   KEY_HOMEPAGE:'Home', KEY_VOLUMEUP:'Volume +', KEY_VOLUMEDOWN:'Volume -', KEY_MUTE:'Mute',
   KEY_POWER:'Power (cannot be mapped to a power action)' };
-let rows = {};           // remote key -> { tap, long, hold }
+for (let i = 0; i <= 9; i++) LABELS['KEY_' + i] = 'Digit ' + i;
+const labelOf = k => LABELS[k] ? `${k} · ${LABELS[k]}` : k;
 const KEYRE = /^KEY_[A-Z0-9_]+$/;
+const URLRE = /^https?:\/\/\S{1,2000}$/;
+let APPS = [];
+async function loadApps() { try { APPS = (await api('/api/apps')).apps || []; } catch (e) {} }
+const appName = id => { const a = APPS.find(x => x.id === id); return a ? a.name : id; };
+function describe(v) {
+  if (!v) return '';
+  if (v.startsWith('app:')) return 'App: ' + appName(v.slice(4));
+  if (v.startsWith('url:')) return 'Website: ' + v.slice(4);
+  return v;
+}
+const typeOf = v => (v || '').startsWith('app:') ? 'app' : (v || '').startsWith('url:') ? 'url' : 'keys';
 
-function el(tag, props, ...kids) {
-  const n = document.createElement(tag); Object.assign(n, props || {});
-  kids.forEach(k => n.append(k)); return n;
+// An action editor: type selector + the matching control. Calls onChange(textValue).
+function actionEditor(value, onChange) {
+  const holder = el('div');
+  const type = el('select');
+  [['keys', 'Keys'], ['app', 'App'], ['url', 'Website']].forEach(([v, t]) => type.append(el('option', { value: v, textContent: t })));
+  type.value = typeOf(value);
+  function control() {
+    holder.textContent = '';
+    const t = type.value;
+    if (t === 'app') {
+      const sel = el('select');
+      sel.append(el('option', { value: '', textContent: '— choose an application —' }));
+      const cur = (value || '').startsWith('app:') ? value.slice(4) : '';
+      const list = APPS.slice(); if (cur && !APPS.some(a => a.id === cur)) list.push({ id: cur, name: cur });
+      list.forEach(a => sel.append(el('option', { value: a.id, textContent: a.name })));
+      sel.value = cur;
+      sel.onchange = () => { value = sel.value ? 'app:' + sel.value : ''; onChange(value); };
+      holder.append(sel);
+    } else if (t === 'url') {
+      const i = el('input', { type: 'url', placeholder: 'https://…', value: (value || '').startsWith('url:') ? value.slice(4) : '',
+        autocomplete: 'off', inputMode: 'url' });
+      i.oninput = () => { value = i.value.trim() ? 'url:' + i.value.trim() : ''; onChange(value); };
+      holder.append(i);
+    } else {
+      const i = el('input', { placeholder: 'e.g. KEY_ENTER or KEY_LEFTCTRL+KEY_C', value: typeOf(value) === 'keys' ? (value || '') : '',
+        autocomplete: 'off', autocapitalize: 'characters' });
+      i.setAttribute('list', 'names');
+      i.oninput = () => { value = i.value.trim(); onChange(value); };
+      holder.append(i);
+    }
+  }
+  type.onchange = () => { value = ''; onChange(''); control(); };
+  control();
+  return el('div', { className: 'act' }, type, holder);
 }
-function field(labelText, value, placeholder, onInput, extra) {
-  const i = el('input', Object.assign({ value: value || '', placeholder, autocomplete: 'off',
-    autocapitalize: 'characters' }, extra || {}));
-  i.oninput = () => onInput(i.value);
-  return el('div', {}, el('label', { textContent: labelText }), i);
-}
+
+// ---------- key mapping editor ----------
+let rows = {};           // remote key -> { tap, long, hold } (text actions)
+
+function labelled(text, node) { return el('div', {}, el('label', { textContent: text }), node); }
 function renderRows() {
   const box = $('rows'); box.textContent = '';
   Object.keys(rows).forEach(key => {
     const r = rows[key];
     const head = el('div', { className: 'rowhead' },
-      el('span', {}, key, el('small', { textContent: LABELS[key] ? LABELS[key] : '' })));
+      el('span', {}, key, el('small', { textContent: LABELS[key] || '' })));
     const del = el('button', { className: 'x', textContent: '×', title: 'Remove' });
     del.onclick = () => { delete rows[key]; renderRows(); };
     head.append(del);
-    const tap = field('Tap', r.tap, 'e.g. KEY_ENTER', v => { r.tap = v.trim(); });
-    tap.querySelector('input').setAttribute('list', 'names');
-    const lng = field('Long press', r.long, 'e.g. KEY_LEFTALT+KEY_F4', v => { r.long = v.trim(); });
-    lng.querySelector('input').setAttribute('list', 'names');
-    const hold = field('Hold (s)', r.hold, '3', v => { r.hold = v.trim(); },
-      { type: 'number', step: '0.1', min: '0.3', max: '10', inputMode: 'decimal' });
-    const g = el('div', { className: 'grid' }, lng, hold);
-    box.append(el('div', { className: 'rowcard' }, head, tap, g));
+    const tap = labelled('Tap', actionEditor(r.tap, v => { r.tap = v; }));
+    const lng = labelled('Long press', actionEditor(r.long, v => { r.long = v; }));
+    const holdIn = el('input', { type: 'number', step: '0.1', min: '0.3', max: '10', placeholder: '3',
+      inputMode: 'decimal', value: r.hold || '' });
+    holdIn.oninput = () => { r.hold = holdIn.value.trim(); };
+    box.append(el('div', { className: 'rowcard' }, head, tap, lng, labelled('Hold time for the long press (s)', holdIn)));
   });
   if (!Object.keys(rows).length) box.append(el('div', { className: 'hint', textContent: 'No keys mapped.' }));
 }
-function addRow(key, spec) {
-  if (!rows[key]) rows[key] = spec || { tap: '', long: '', hold: '' };
-  renderRows();
+function addRow(key, spec) { if (!rows[key]) rows[key] = spec || { tap: '', long: '', hold: '' }; renderRows(); }
+function rowsToPayload(src) {
+  const keys = {};
+  Object.keys(src).forEach(k => { const r = src[k]; const item = {};
+    if (r.tap) item.tap = r.tap;
+    if (r.long) { item.long = r.long; if (r.hold !== '' && r.hold !== undefined) item.hold = parseFloat(r.hold); }
+    if (item.tap || item.long) keys[k] = item; });
+  return keys;
 }
 async function loadMap() {
   try {
@@ -222,7 +291,7 @@ async function pollRecent() {
     const r = await api('/api/recent'); const box = $('recent'); box.textContent = '';
     if (!r.keys.length) { box.append(el('span', { className: 'hint', textContent: 'no keys seen in the last 90 s' })); return; }
     r.keys.forEach(k => {
-      const c = el('button', { className: 'chip', textContent: LABELS[k] ? `${k} · ${LABELS[k]}` : k });
+      const c = el('button', { className: 'chip', textContent: labelOf(k) });
       c.onclick = () => { addRow(k); document.querySelectorAll('.rowcard').forEach(n => {
         if (n.textContent.startsWith(k)) n.scrollIntoView({ behavior: 'smooth', block: 'center' }); }); };
       box.append(c);
@@ -233,17 +302,191 @@ $('bAddNum').onclick = () => { for (let i = 0; i <= 9; i++) addRow('KEY_' + i, {
   $('mMap').textContent = 'Number rows added (they send the same digit). If the remote reports numbers under other names, press them and add what shows up above.'; $('mMap').className = 'msg'; };
 $('bAddKey').onclick = () => { const k = (prompt('Remote key name, e.g. KEY_8') || '').trim().toUpperCase();
   if (k && KEYRE.test(k)) addRow(k); else if (k) alert('Use a name like KEY_8'); };
-$('bSave').onclick = () => {
-  const keys = {};
-  Object.keys(rows).forEach(k => { const r = rows[k]; const item = {};
-    if (r.tap) item.tap = r.tap; if (r.long) { item.long = r.long; if (r.hold !== '') item.hold = parseFloat(r.hold); }
-    if (item.tap || item.long) keys[k] = item; });
-  act($('bSave'), $('mMap'), '/api/keymap', { keys });
-};
+$('bSave').onclick = () => act($('bSave'), $('mMap'), '/api/keymap', { keys: rowsToPayload(rows) });
 $('bReset').onclick = () => { if (confirm('Discard your mapping and go back to the defaults?'))
   act($('bReset'), $('mMap'), '/api/keymap/reset', {}, loadMap); };
 
-refresh(); setInterval(refresh, 3000);
+// ---------- setup wizard ----------
+// 1 discover (nothing recorded) -> 2 assign (guided, from the command lists) -> 3 shortcuts -> 4 review
+const W = { step: 0, after: 0, timer: null, seen: {}, last: '', profiles: [], chosen: {}, queue: [], i: 0,
+            started: false, done: {}, owner: {}, assigned: {}, lastAccept: 0, msg: '', waiting: false,
+            pending: null, mode: 'replace' };
+const wiz = () => $('wiz');
+
+function wizReset() {
+  Object.assign(W, { step: 0, seen: {}, last: '', queue: [], i: 0, started: false, done: {}, owner: {},
+    assigned: {}, msg: '', waiting: false, pending: null, mode: 'replace' });
+}
+async function wizStart() {
+  wizReset();
+  try { const r = await api('/api/events?after=9999999999'); W.after = r.now; } catch (e) { W.after = Date.now() / 1000; }
+  try { const p = await api('/api/profiles'); W.profiles = p.profiles || []; } catch (e) { W.profiles = []; }
+  W.chosen = {}; W.profiles.forEach(p => { W.chosen[p.id] = !!p.default; });
+  wizGo(1);
+}
+function wizGo(step) {
+  W.step = step; W.msg = '';
+  if ((step >= 1 && step <= 3) && !W.timer) W.timer = setInterval(wizPoll, 700);
+  if (!(step >= 1 && step <= 3) && W.timer) { clearInterval(W.timer); W.timer = null; }
+  wizRender();
+}
+async function wizPoll() {
+  try {
+    const r = await api('/api/events?after=' + W.after);
+    r.events.forEach(ev => { W.after = Math.max(W.after, ev.ts); wizKey(ev.key); });
+  } catch (e) {}
+}
+function wizKey(key) {
+  if (W.step === 1) { W.seen[key] = (W.seen[key] || 0) + 1; W.last = key; wizRenderSeen(); }
+  else if (W.step === 2 && W.started) wizAssign(key);
+  else if (W.step === 3 && W.waiting) { W.waiting = false; W.pending = key; wizRender(); }
+}
+function nav(...btns) { const g = el('div', { className: 'grid' }); btns.forEach(b => g.append(b)); return g; }
+function btn(text, fn, alt) { const b = el('button', { textContent: text, className: alt ? 'alt' : '' }); b.onclick = fn; return b; }
+
+function wizRender() {
+  const box = wiz(); box.textContent = '';
+  if (W.step === 0) {
+    box.append(el('div', { className: 'hint', textContent:
+      'Guided setup in four short steps: (1) press every button to see which ones the remote has, nothing is recorded; ' +
+      '(2) press the button you want for each command of a list (ES-DE and more); (3) add shortcuts that open an app or a website; (4) review and save.' }),
+      btn('Start the wizard', wizStart));
+  } else if (W.step === 1) {
+    box.append(el('h3', { textContent: 'Step 1 of 4 · Discover the buttons' }),
+      el('div', { className: 'hint', textContent: 'Press every button on the remote, one at a time. Nothing is recorded or changed: you only see which buttons exist and what the machine receives. Keep the TV on the machine’s input.' }),
+      el('div', { className: 'big', id: 'wLast', textContent: W.last ? labelOf(W.last) : 'press a button…' }),
+      el('div', { className: 'chips', id: 'wSeen' }),
+      el('div', { className: 'hint', textContent: 'A button that never shows up here is consumed by the TV and cannot be used.' }),
+      nav(btn('Cancel', () => { wizReset(); wizGo(0); }, true), btn('Next: assign buttons', () => wizGo(2))));
+    wizRenderSeen();
+  } else if (W.step === 2) wizRenderAssign();
+  else if (W.step === 3) wizRenderShortcuts();
+  else if (W.step === 5) box.append(el('h3', { textContent: 'Done' }),
+    el('div', { className: 'msg good', textContent: 'Saved. The receiver applies the new mapping within a second: try the buttons now (with the machine on screen).' }),
+    btn('Close the wizard', () => { wizReset(); wizGo(0); }, true));
+  else wizRenderReview();
+}
+function wizRenderSeen() {
+  const s = $('wSeen'); if (!s) return; s.textContent = '';
+  $('wLast').textContent = W.last ? labelOf(W.last) : 'press a button…';
+  Object.keys(W.seen).forEach(k => s.append(el('span', { className: 'chip' }, labelOf(k), el('b', { textContent: '×' + W.seen[k] }))));
+  const next = wiz().querySelector('.grid button:last-child'); if (next) next.disabled = !Object.keys(W.seen).length;
+}
+function wizRenderAssign() {
+  const box = wiz(); box.textContent = '';
+  if (!W.started) {
+    box.append(el('h3', { textContent: 'Step 2 of 4 · Assign buttons' }),
+      el('div', { className: 'hint', textContent: 'Choose the command lists to go through. For each command you will be asked to press the remote button you want for it.' }));
+    W.profiles.forEach(p => {
+      const cb = el('input', { type: 'checkbox', checked: !!W.chosen[p.id] }); cb.onchange = () => { W.chosen[p.id] = cb.checked; };
+      box.append(el('label', { className: 'radio' }, cb, el('span', {}, `${p.name} (${p.actions.length} commands)`)));
+    });
+    if (!W.profiles.length) box.append(el('div', { className: 'msg warn', textContent: 'No command lists available.' }));
+    box.append(nav(btn('Back', () => wizGo(1), true), btn('Start', () => {
+      W.queue = []; W.profiles.forEach(p => { if (W.chosen[p.id]) p.actions.forEach(a => W.queue.push(a)); });
+      if (!W.queue.length) return; W.started = true; W.i = 0; wizRenderAssign(); })));
+    return;
+  }
+  const a = W.queue[W.i];
+  box.append(el('h3', { textContent: `Step 2 of 4 · ${W.i + 1} / ${W.queue.length}` }),
+    el('div', { className: 'bar' }, el('i', { style: `width:${Math.round(100 * W.i / W.queue.length)}%` })),
+    el('div', { className: 'big', textContent: a.label }),
+    el('div', { className: 'hint', textContent: a.help }),
+    el('div', { className: 'hint', textContent: 'Sends: ' + a.target + (a.slot === 'long' ? ` (hold ${a.hold || 3} s)` : '') }),
+    el('div', { className: 'msg ' + (W.msg.startsWith('✓') ? 'good' : 'warn'), textContent: W.msg || (a.slot === 'long' ? 'Press the button you want to HOLD for this command…' : 'Press the remote button you want for this command…') }),
+    nav(btn('Skip', () => { W.i++; wizAfterIndex(); }, true), btn('Back', wizBack, true)),
+    btn('Done: go to shortcuts', () => wizGo(3), true));
+}
+function wizAfterIndex() { W.msg = ''; if (W.i >= W.queue.length) wizGo(3); else wizRenderAssign(); }
+function wizBack() {
+  if (W.i === 0) { W.started = false; wizRenderAssign(); return; }
+  W.i--; const prev = W.queue[W.i], d = W.done[prev.id];
+  if (d) { const e = W.assigned[d.key]; if (e) { delete e[d.slot]; if (!e.tap && !e.long) delete W.assigned[d.key]; }
+    delete W.owner[d.key + '|' + d.slot]; delete W.done[prev.id]; }
+  W.msg = ''; wizRenderAssign();
+}
+function wizAssign(key) {
+  const a = W.queue[W.i]; if (!a || Date.now() - W.lastAccept < 500) return;
+  const slot = a.slot || 'tap', cur = W.assigned[key] && W.assigned[key][slot];
+  if (cur) { W.msg = `${labelOf(key)} is already used for "${W.owner[key + '|' + slot]}". Press another button, or Skip.`; wizRenderAssign(); return; }
+  const e = W.assigned[key] = W.assigned[key] || {};
+  e[slot] = a.target; if (slot === 'long') e.hold = String(a.hold || 3);
+  W.owner[key + '|' + slot] = a.label; W.done[a.id] = { key, slot }; W.lastAccept = Date.now();
+  W.msg = `✓ ${labelOf(key)} → ${a.label}`; W.i++;
+  if (W.i >= W.queue.length) wizGo(3); else wizRenderAssign();
+}
+function wizShortcutList() {
+  const l = el('div');
+  Object.keys(W.assigned).forEach(k => ['tap', 'long'].forEach(slot => {
+    const v = W.assigned[k][slot]; if (v && (v.startsWith('app:') || v.startsWith('url:')))
+      l.append(el('div', { className: 'row' }, el('span', {}, `${labelOf(k)} · ${slot === 'long' ? 'hold' : 'tap'}`), el('span', { textContent: describe(v) })));
+  }));
+  return l;
+}
+function wizRenderShortcuts() {
+  const box = wiz(); box.textContent = '';
+  box.append(el('h3', { textContent: 'Step 3 of 4 · Shortcuts (optional)' }),
+    el('div', { className: 'hint', textContent: 'Bind a button to an installed application or to a website. Only applications from the installed list and http(s) addresses are allowed.' }),
+    wizShortcutList());
+  if (W.waiting) {
+    box.append(el('div', { className: 'big', textContent: 'press the remote button…' }), btn('Cancel', () => { W.waiting = false; wizRender(); }, true));
+    return;
+  }
+  if (W.pending) {
+    const key = W.pending; const f = { slot: 'tap', value: '', hold: '1' };
+    const slotSel = el('select'); [['tap', 'Tap'], ['long', 'Long press']].forEach(([v, t]) => slotSel.append(el('option', { value: v, textContent: t })));
+    const holdIn = el('input', { type: 'number', step: '0.1', min: '0.3', max: '10', value: '1', inputMode: 'decimal' });
+    const holdWrap = labelled('Hold time (s)', holdIn); holdWrap.style.display = 'none';
+    slotSel.onchange = () => { f.slot = slotSel.value; holdWrap.style.display = f.slot === 'long' ? '' : 'none'; };
+    holdIn.oninput = () => { f.hold = holdIn.value.trim(); };
+    const ed = actionEditor('app:', v => { f.value = v; });
+    const err = el('div', { className: 'msg warn' });
+    box.append(el('div', { className: 'big', textContent: labelOf(key) }),
+      labelled('When the button is', slotSel), holdWrap, labelled('Do', ed), err,
+      nav(btn('Cancel', () => { W.pending = null; wizRender(); }, true), btn('Add shortcut', () => {
+        if (!f.value || (f.value.startsWith('url:') && !URLRE.test(f.value.slice(4)))) { err.textContent = 'Choose an application or enter a valid http(s) address.'; return; }
+        const cur = W.assigned[key] && W.assigned[key][f.slot];
+        if (cur && !confirm(`${labelOf(key)} already has a ${f.slot} action (${describe(cur)}). Replace it?`)) return;
+        const e = W.assigned[key] = W.assigned[key] || {}; e[f.slot] = f.value; if (f.slot === 'long') e.hold = f.hold || '1';
+        W.pending = null; wizRender(); })));
+    return;
+  }
+  box.append(btn('Add a shortcut', () => { W.waiting = true; wizRender(); }),
+    nav(btn('Back', () => wizGo(2), true), btn('Next: review', () => wizGo(4))));
+}
+function wizRenderReview() {
+  const box = wiz(); box.textContent = '';
+  box.append(el('h3', { textContent: 'Step 4 of 4 · Review and save' }));
+  const keys = Object.keys(W.assigned);
+  if (!keys.length) box.append(el('div', { className: 'msg warn', textContent: 'Nothing assigned yet.' }));
+  else {
+    const t = el('table'); t.append(el('tr', {}, el('th', { textContent: 'Remote button' }), el('th', { textContent: 'Tap' }), el('th', { textContent: 'Long press' })));
+    keys.forEach(k => { const e = W.assigned[k];
+      t.append(el('tr', {}, el('td', { textContent: labelOf(k) }), el('td', { textContent: describe(e.tap) }),
+        el('td', { textContent: e.long ? describe(e.long) + ` (${e.hold || 3} s)` : '' }))); });
+    box.append(t);
+  }
+  [['replace', 'Replace my current mapping with this one'], ['merge', 'Add to my current mapping (these buttons override the same ones)']].forEach(([v, text]) => {
+    const r = el('input', { type: 'radio', name: 'wmode', checked: W.mode === v }); r.onchange = () => { W.mode = v; };
+    box.append(el('label', { className: 'radio' }, r, el('span', { textContent: text })));
+  });
+  const out = el('div', { className: 'msg' });
+  const save = btn('Save', async () => {
+    if (!keys.length) return;
+    const base = W.mode === 'merge' ? JSON.parse(JSON.stringify(rows)) : {};
+    keys.forEach(k => { const e = W.assigned[k]; const r = base[k] = base[k] || { tap: '', long: '', hold: '' };
+      if (e.tap) r.tap = e.tap; if (e.long) { r.long = e.long; r.hold = e.hold || ''; } });
+    save.disabled = true; out.textContent = 'Saving…';
+    try { const r = await api('/api/keymap', { keys: rowsToPayload(base) });
+      if (r.ok) { rows = base; renderRows(); wizGo(5); return; }
+      out.textContent = 'Failed: ' + r.message; out.className = 'msg warn'; }
+    catch (e) { out.textContent = e.message; out.className = 'msg warn'; }
+    save.disabled = false; });
+  box.append(nav(btn('Back', () => wizGo(3), true), save), out);
+}
+wizRender();
+
+loadApps(); refresh(); setInterval(refresh, 3000);
 loadMap(); pollRecent(); setInterval(pollRecent, 2500);
 </script>
 </body>

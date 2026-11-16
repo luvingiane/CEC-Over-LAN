@@ -18,6 +18,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T11 Inject only while the machine is on screen | OK |
 | T12 Pairing web UI | OK (confirmed on a phone; auto-detect unverified) |
 | T13 Editable key mapping | OK (pending the owner's check on the real remote) |
+| T14 Setup wizard and launch actions | OK (pending the owner's check with the real remote) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -118,6 +119,16 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **Not tested:** pressing the new keys on the real remote after deployment, typing on a real phone, whether this remote sends digits as `KEY_0`–`KEY_9` (earlier a `KEY_8` was seen once, so probably yes: HYPOTHESIS).
 **Default:** `KEY_EXIT` and `KEY_FIND` are not mapped by default; the owner chooses what they do in the UI.
 **Outcome:** OK, pending the owner's check on the real remote.
+
+## T14 — Setup wizard and launch actions (apps, websites)
+**Request:** an installer-style flow that first lets the user press all the buttons without recording anything, then records them against ready-made command lists (ES-DE's list already existed), and the ability to bind a key to an application or a website.
+**Done:** a four-step *Setup wizard* in the web UI (discover, assign, shortcuts, review/save), command lists in `receiver/web/profiles.json` (ES-DE: 17 commands from the user guide, Desktop and media: 12, Number keys: 10), and two new action types next to key combos: `app:<file>.desktop` (launched with `gio launch`) and `url:http(s)://…` (opened with `xdg-open`). New API endpoints: `/api/apps`, `/api/events`, `/api/profiles`. The receiver launches only once per press (1.5 s debounce) and only while the machine is on the TV screen.
+**Design choice (security):** no free-form command is accepted. Apps must be installed `.desktop` files (the id is validated and resolved against the known application directories, so no path traversal) and URLs must be `http(s)`; the process is started without a shell, detached, and with the graphical-session variables of `systemd --user`. The price: anyone with the web UI token can launch any installed app or open any web address on the machine.
+**DONE (tests):** 19 offline unit tests pass, including: `javascript:`, `file:`, `ftp:`, spaces/newlines in URLs, `../` and `$()` in app ids, shell text as an action are all rejected; an app tap launches once and is debounced; a long press can launch a URL while the tap presses a key; nothing launches when the source is inactive.
+**DONE (browser, 375x812, simulated key presses through a test hook):** discover step counts presses and enables *Next* only after the first key; the assign step handles a conflict (a key already used for the same kind of action is refused and the command stays pending), skip, and a long-press command (Quit, hold 3 s); the shortcut step rejects an invalid address and accepts a website on tap and an application on long press; review and save wrote `keymap.json` (mode 0600) with the expected content, and the receiver's own loader reads it back. The server also rejects an application that is not installed, a path traversal, `javascript:`/`file:` URLs and a free-form command.
+**DONE (on the machine):** `/api/apps` lists 72 applications including `esde.desktop`, `kodi.desktop` and `firefox-esr.desktop`; the three profiles load; the service environment contains `DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0` and `XDG_RUNTIME_DIR`; a dry run resolves `kodi.desktop` to `/usr/share/applications/kodi.desktop`; both services are `active`.
+**Not tested:** a real launch of an application or a page on the machine from the remote (only dry runs, to avoid opening windows on the TV unannounced); the wizard with the real remote (the key events there were simulated); other desktops than GNOME.
+**Outcome:** OK, pending the owner's check with the real remote.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

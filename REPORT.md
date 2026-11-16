@@ -15,6 +15,7 @@ Marcatura: FATTO = comando + output reale; IPOTESI = non provato.
 | T8 Device uinput | OK |
 | T9 Mappatura | PARZIALE |
 | T10 Unità systemd | PREPARATA, NON INSTALLATA |
+| T11 Iniezione solo con la VM sullo schermo | OK |
 
 ## T1 — Come arriva il video della VM alla TV
 **Comando:** domanda al proprietario.
@@ -43,7 +44,8 @@ Marcatura: FATTO = comando + output reale; IPOTESI = non provato.
 **FATTO (dai log):** codici visti: `KEY_UP/DOWN/LEFT/RIGHT`, `KEY_SELECT`, `KEY_BACK`, `KEY_VOLUMEUP/DOWN`, `KEY_CHANNELUP/DOWN`, `KEY_SEARCH`, `KEY_STOPCD`, `KEY_EJECTCD`, `KEY_SHUFFLE`, `KEY_8`. Ogni pressione genera `DOWN` e `UP`.
 **FATTO (conferma del proprietario e prove):** tasto Verde tenuto 3 s -> combo `Alt+F4` in dry-run; tocco breve -> nessun effetto.
 **FATTO (prova del proprietario):** Rosso = `KEY_STOPCD`, Verde = `KEY_EJECTCD`, Giallo = `KEY_SHUFFLE` (il Giallo apre la panoramica di GNOME), Blu = `KEY_SEARCH`. `KEY_8` non è associato a un tasto noto.
-**Non lo so:** Home, Play/Pausa, Mute e Assistant fisici non sono comparsi nei log; non so se li consuma la TV prima del kernel. `getevent` legge a livello kernel, quindi non dimostra che la TV non reagisca allo stesso tasto.
+**FATTO (journal del servizio):** il tasto Home fisico arriva a `getevent` come `KEY_HOMEPAGE` (`[ignorato] KEY_HOMEPAGE DOWN/UP`), anche se la TV lo usa per uscire dall'ingresso.
+**Non lo so:** Play/Pausa, Mute e Assistant fisici non sono comparsi nei log; non so se li consuma la TV prima del kernel. `getevent` legge a livello kernel, quindi non dimostra che la TV non reagisca allo stesso tasto.
 **Esito:** PARZIALE.
 
 ## T6 — Persistenza di adb dopo reboot
@@ -73,6 +75,18 @@ Marcatura: FATTO = comando + output reale; IPOTESI = non provato.
 **FATTO:** il receiver gira come servizio utente transitorio (`systemd-run --user --unit=tv-remote -p Restart=always -p RestartSec=2 ...`), `systemctl --user is-active tv-remote` -> `active`, device `TV Remote (vm170)` creato. Non sopravvive a un riavvio della VM.
 **Non lo so:** comportamento al boot, se la TV non risponde, tempo di riavvio dopo kill del processo.
 **Rischi:** la porta del debug wireless può cambiare (vedi T6). Senza `loginctl enable-linger` il servizio parte solo con il login.
+
+## T11 — Iniettare solo quando la TV mostra la VM
+**Problema:** senza controllo il receiver inietta i tasti anche quando si usa la TV (home, altre app, altri ingressi).
+**FATTO (`adb shell dumpsys hdmi_control` e `dumpsys tv_input`):**
+- VM su HDMI 1: `mActiveRoutingPath: 0x1000`, `mActiveSource: (invalid, invalid)`, app in primo piano `com.mitv.livetv`.
+- Home della TV: `mActiveRoutingPath: 0x0000`, `mActiveSource: (0x00, 0x0000)`, app in primo piano il launcher.
+- `tv_input` resta con la sessione `HW2` anche fuori da HDMI 1: **non** è un segnale affidabile.
+- Un Apple TV su HDMI 2 compare come dispositivo CEC all'indirizzo `0x2000`.
+**Soluzione:** `tv_remote.py` legge `mActiveRoutingPath` ogni 1,5 s (opzioni `--active-path`, `--poll`, `--no-gate`) e inietta solo se vale `0x1000`. Se la lettura fallisce non inietta. All'uscita da HDMI 1 rilascia tutti i tasti.
+**FATTO (journal):** `15:58:07 percorso=0x1000 -> si`, `15:58:16 percorso=0x0000 -> no` (circa 2 s dopo il tasto Home), `15:58:34 percorso=0x1000 -> si`. Il proprietario conferma che sulla home la VM non reagisce e su HDMI 1 sì.
+**Non lo so:** valore con l'Apple TV in primo piano (IPOTESI: `0x2000`); comportamento con la TV in standby; carico del polling sulla TV.
+**Esito:** OK.
 
 ## Raccomandazione (provvisoria)
 Variante A (senza app sulla TV) funziona. Prima di renderla permanente: T6 (stabilità della porta) e T4 (standby). Se la porta cambia a ogni riavvio, la variante A richiede un nuovo pairing manuale e la variante B diventa preferibile.

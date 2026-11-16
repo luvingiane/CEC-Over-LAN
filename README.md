@@ -1,12 +1,13 @@
-# vm170-tv-remote
+# CEC-Over-LAN
 
-Usa il telecomando fisico di una Google TV come dispositivo di input di una VM Linux collegata alla TV via HDMI.
+Usa il telecomando fisico di una Google TV come dispositivo di input di una VM Linux collegata alla TV via HDMI, quando l'HDMI-CEC non porta i tasti: i tasti viaggiano sulla LAN (adb) e il receiver li inietta solo quando la TV sta mostrando la VM.
 
 Come funziona (variante A, nessuna app sulla TV):
 
 1. La VM si collega alla TV con `adb` (debug wireless, pairing una tantum).
 2. `receiver/tv_remote.py` legge `adb shell getevent -l`, traduce i tasti e li re-inietta in un device `uinput` ("TV Remote (vm170)").
 3. La VM vede una normale tastiera: ES-DE, Kodi e GNOME reagiscono.
+4. Ogni 1,5 s il receiver legge `mActiveRoutingPath` da `dumpsys hdmi_control`: inietta solo se la TV mostra la porta HDMI della VM (`0x1000` = HDMI 1, configurabile con `--active-path`). Se usi la TV per altro, i tasti non arrivano alla VM.
 
 Provato su: Debian 13 con GNOME Shell 48.7, TV `MiTV_MZTU0` (Google TV), cavo HDMI in fibra. Il report completo dei test è in [REPORT.md](REPORT.md).
 
@@ -23,7 +24,7 @@ Provato su: Debian 13 con GNOME Shell 48.7, TV `MiTV_MZTU0` (Google TV), cavo HD
 | Giallo | `KEY_SHUFFLE` | Super (panoramica GNOME) |
 | Blu | `KEY_SEARCH` | Play/Pausa |
 
-Il volume resta alla TV. I tasti Home, Mute e Assistant del telecomando non arrivano a `getevent`.
+Il volume resta alla TV. Il tasto Home fisico arriva a `getevent` ma non è mappato (la TV lo usa per uscire dall'ingresso). Mute e Assistant non sono stati osservati.
 
 ## Requisiti
 
@@ -36,7 +37,8 @@ Il volume resta alla TV. I tasti Home, Mute e Assistant del telecomando non arri
 adb pair <IP_TV>:<PORTA_PAIRING> <CODICE>      # una volta sola
 adb connect <IP_TV>:<PORTA>
 python3 receiver/tv_remote.py --target <IP_TV>:<PORTA> --dry-run   # stampa e basta
-python3 receiver/tv_remote.py --target <IP_TV>:<PORTA>             # inietta davvero
+python3 receiver/tv_remote.py --target <IP_TV>:<PORTA>             # inietta davvero, solo con la VM sullo schermo
+python3 receiver/tv_remote.py --target <IP_TV>:<PORTA> --no-gate   # inietta sempre
 ```
 
 Come servizio: vedi `receiver/tv-remote.service` (unità utente, `Restart=always`).

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Receiver per la VM 170: legge i tasti del telecomando Google TV via
-`adb shell getevent -l` (variante A) e li re-inietta in un device uinput.
+"""Receiver per la VM: legge i tasti del telecomando Google TV via
+`adb shell getevent -l` (variante A) e li re-inietta in un device uinput,
+ma SOLO quando la TV sta mostrando la VM (percorso CEC attivo = quello della
+porta HDMI a cui e' collegata la VM).
 
 Uso:
   tv_remote.py --target <IP:porta> --dry-run     # stampa soltanto, non inietta
   tv_remote.py --target <IP:porta>               # inietta davvero
+  tv_remote.py --target <IP:porta> --no-gate     # inietta sempre (senza controllo sorgente)
 """
 import argparse
 import re
@@ -14,6 +17,7 @@ import threading
 import time
 
 LINE = re.compile(r"/dev/input/event\d+:\s+EV_KEY\s+(KEY_\w+)\s+(DOWN|UP)\b")
+PATH = re.compile(r"mActiveRoutingPath:\s*(0x[0-9a-fA-F]+)")
 LONG_PRESS_S = 3.0
 
 try:
@@ -48,6 +52,7 @@ class Out:
         self.dry = dry_run
         self.down = set()
         self.timers = {}
+        self.lock = threading.RLock()
         names = set(simple.values())
         for combo in long_combo.values():
             names.update(combo)
@@ -66,25 +71,63 @@ class Out:
         self.ui.syn()
 
     def press(self, name):
-        self.down.add(name)
-        self.key(name, 1)
+        with self.lock:
+            self.down.add(name)
+            self.key(name, 1)
 
     def release(self, name):
-        self.down.discard(name)
-        self.key(name, 0)
+        with self.lock:
+            self.down.discard(name)
+            self.key(name, 0)
 
     def release_all(self):
-        for t in self.timers.values():
-            t.cancel()
-        self.timers.clear()
-        for n in list(self.down):
-            self.release(n)
+        with self.lock:
+            for t in self.timers.values():
+                t.cancel()
+            self.timers.clear()
+            for n in list(self.down):
+                self.release(n)
 
     def combo(self, names):
-        for n in names:
-            self.press(n)
-        for n in reversed(names):
-            self.release(n)
+        with self.lock:
+            for n in names:
+                self.press(n)
+            for n in reversed(names):
+                self.release(n)
+
+
+class Gate:
+    """Dice se la TV sta mostrando la VM, leggendo mActiveRoutingPath da hdmi_control."""
+
+    def __init__(self, args, out):
+        self.args = args
+        self.out = out
+        self.active = args.no_gate
+        self.stop = threading.Event()
+
+    def read_path(self):
+        try:
+            r = subprocess.run(
+                ["adb", "-s", self.args.target, "shell",
+                 "dumpsys hdmi_control | grep mActiveRoutingPath"],
+                capture_output=True, text=True, timeout=6)
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        m = PATH.search(r.stdout)
+        return m.group(1).lower() if m else None
+
+    def loop(self):
+        want = self.args.active_path.lower()
+        while not self.stop.is_set():
+            path = self.read_path()
+            now = path == want  # se la lettura fallisce (None) -> non iniettare
+            if now != self.active:
+                self.active = now
+                if not now:
+                    self.out.release_all()
+                print(f"[sorgente] percorso={path} -> VM sullo schermo: {'si' if now else 'no'}",
+                      flush=True)
+            self.stop.wait(self.args.poll)
 
 
 def handle(out, simple, long_combo, key, state):
@@ -106,6 +149,9 @@ def handle(out, simple, long_combo, key, state):
 def run(args):
     simple, long_combo = build_maps(args.back_key)
     out = Out(simple, long_combo, args.dry_run)
+    gate = Gate(args, out)
+    if not args.no_gate:
+        threading.Thread(target=gate.loop, daemon=True).start()
     delay = 1
     try:
         while True:
@@ -116,7 +162,7 @@ def run(args):
             started = time.monotonic()
             for line in proc.stdout:
                 m = LINE.search(line)
-                if m:
+                if m and gate.active:
                     handle(out, simple, long_combo, m.group(1), m.group(2))
             proc.wait()
             out.release_all()  # evita tasti incastrati se adb cade
@@ -128,6 +174,7 @@ def run(args):
     except KeyboardInterrupt:
         pass
     finally:
+        gate.stop.set()
         out.release_all()
         if out.ui:
             out.ui.close()
@@ -138,4 +185,8 @@ if __name__ == "__main__":
     p.add_argument("--target", required=True, help="IP:porta del debug wireless")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"])
+    p.add_argument("--active-path", default="0x1000",
+                   help="percorso CEC della porta HDMI della VM (HDMI 1 = 0x1000)")
+    p.add_argument("--poll", type=float, default=1.5, help="secondi tra due controlli sorgente")
+    p.add_argument("--no-gate", action="store_true", help="inietta sempre")
     run(p.parse_args())

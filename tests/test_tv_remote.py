@@ -116,6 +116,60 @@ class Routing(unittest.TestCase):
         self.assertEqual(out.events, [("KEY_UP", 1), ("KEY_UP", 0)])
 
 
+def bare_out(flag):
+    """An Out without a uinput device (so it runs anywhere), driven by a DryFlag."""
+    out = object.__new__(core.Out)
+    out.cli_dry, out.flag, out.pressed, out.ui = False, flag, set(), None
+    return out
+
+
+class DryRun(unittest.TestCase):
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "dry-run"
+        self.flag = core.DryFlag(self.path)
+
+    def tick(self):
+        time.sleep(0.6)  # the flag file is re-checked every 0.5 s
+
+    def test_flag_follows_the_file(self):
+        self.assertFalse(self.flag.on)
+        self.path.touch()
+        self.tick()
+        self.assertTrue(self.flag.on)
+        self.path.unlink()
+        self.tick()
+        self.assertFalse(self.flag.on)
+
+    def test_keys_are_not_pressed_while_dry(self):
+        out = bare_out(self.flag)
+        self.path.touch()
+        self.tick()
+        out.key("KEY_ENTER", 1)
+        out.key("KEY_ENTER", 0)
+        self.assertEqual(out.pressed, set())
+
+    def test_keys_are_pressed_when_not_dry(self):
+        out = bare_out(self.flag)
+        out.key("KEY_ENTER", 1)
+        self.assertEqual(out.pressed, {"KEY_ENTER"})
+        out.key("KEY_ENTER", 0)
+        self.assertEqual(out.pressed, set())
+
+    def test_key_already_down_is_released_when_dry_turns_on(self):
+        out = bare_out(self.flag)
+        out.key("KEY_UP", 1)              # really pressed
+        self.path.touch()
+        self.tick()
+        out.key("KEY_UP", 0)              # must still go through, or the key would stay stuck
+        self.assertEqual(out.pressed, set())
+        out.key("KEY_DOWN", 1)            # a new press is only logged
+        self.assertEqual(out.pressed, set())
+
+    def test_cli_dry_run_always_dry(self):
+        out = core.Out(True)
+        self.assertTrue(out.is_dry())
+
+
 class Actions(unittest.TestCase):
     def test_parse_action_kinds(self):
         self.assertEqual(core.parse_action("KEY_A"), {"type": "keys", "keys": ["KEY_A"]})

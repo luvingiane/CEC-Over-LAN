@@ -19,6 +19,7 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 | T12 Pairing web UI | OK (confirmed on a phone; auto-detect unverified) |
 | T13 Editable key mapping | OK (pending the owner's check on the real remote) |
 | T14 Setup wizard and launch actions | OK (pending the owner's check with the real remote) |
+| T15 Dry-run switch | OK (pending the owner's test with the real remote) |
 
 ## T1 — How the VM's video reaches the TV
 **Command:** question to the owner.
@@ -129,6 +130,17 @@ Marking: DONE = command + real output; HYPOTHESIS = not proven.
 **DONE (on the machine):** `/api/apps` lists 72 applications including `esde.desktop`, `kodi.desktop` and `firefox-esr.desktop`; the three profiles load; the service environment contains `DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0` and `XDG_RUNTIME_DIR`; a dry run resolves `kodi.desktop` to `/usr/share/applications/kodi.desktop`; both services are `active`.
 **Not tested:** a real launch of an application or a page on the machine from the remote (only dry runs, to avoid opening windows on the TV unannounced); the wizard with the real remote (the key events there were simulated); other desktops than GNOME.
 **Outcome:** OK, pending the owner's check with the real remote.
+
+## T15 — Dry-run switch
+**Request:** when a remote button is pressed, only do a dry run and apply no change.
+**Done:** a runtime flag file (`~/cec-over-lan/dry-run`) re-checked every 0.5 s by the receiver; while it exists keys are not pressed and apps/URLs are not launched, they are only logged. A key already pressed when the switch is turned on is still released (no stuck keys). The web UI has a *Dry run* card with the switch and the list of the latest actions (dry-run lines read "would …", real launches "LAUNCHED").
+**DONE (tests):** 24 offline unit tests pass; the new ones cover the flag following the file, no key pressed while dry, keys pressed when not dry, a key already down released after switching to dry, and the permanent `--dry-run`.
+**DONE (API, local test server):** `POST /api/dryrun {"on": true}` creates the flag file, `false` removes it, a non-boolean is rejected; `/api/status` reports `dry_run`.
+**DONE (on the machine):** switched on; both services `active`; the page served is the updated one.
+**DONE (journal, found while checking):** at 18:32:10 and 18:33:49 (machine time) the service really launched ES-DE and Kodi after `KEY_0`/`KEY_1` presses on the real remote, with the mapping saved from the web UI at 18:32 and 18:33; no error was logged. This shows that digits reach the receiver as `KEY_0`–`KEY_9` and that app launching from a key works; the log does not say whether the windows appeared.
+**Not tested:** the dry-run list with real key presses after the switch (the owner was about to try).
+**I don't know:** why the receiver's cgroup showed a 1.1 GB memory peak and about 3 minutes of CPU in roughly an hour before the last restart; it now uses about 15 MB.
+**Outcome:** OK, pending the owner's test with the real remote.
 
 ## Recommendation (provisional)
 Variant A (no app on the TV) works, but T6 and T4 showed that after a TV reboot or a standby the wireless debugging port and the pairing are lost, so it needs a manual re-pairing each time. It is fine as a stopgap. The planned next phase is variant B: an APK with an AccessibilityService that captures the keys and sends them to the machine, which removes the dependency on wireless debugging.

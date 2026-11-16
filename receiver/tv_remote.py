@@ -46,6 +46,7 @@ DESKTOP_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.desktop$")
 URL_RE = re.compile(r"^https?://[^\s\x00-\x1f\x7f]{1,2000}$")
 STATE_DIR = Path(os.environ.get("CEC_STATE_DIR", Path.home() / "cec-over-lan"))
 KEYMAP_FILE = STATE_DIR / "keymap.json"
+DRYRUN_FILE = STATE_DIR / "dry-run"
 APP_DIRS = [Path("/usr/share/applications"), Path("/usr/local/share/applications"),
             Path.home() / ".local/share/applications",
             Path("/var/lib/flatpak/exports/share/applications"),
@@ -263,21 +264,51 @@ def key_codes():
     return sorted(codes)
 
 
+class DryFlag:
+    """Runtime dry-run switch: it is ON while the flag file exists (the web UI creates/removes it)."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._on = False
+        self._last = None
+        self._checked = -99.0
+
+    @property
+    def on(self):
+        now = time.monotonic()
+        if now - self._checked >= 0.5:
+            self._checked = now
+            self._on = self.path.exists()
+            if self._on != self._last:
+                self._last = self._on
+                print("[dry-run mode] ON: remote keys are only logged, nothing is applied"
+                      if self._on else "[dry-run mode] OFF: remote keys are applied", flush=True)
+        return self._on
+
+
 class Out:
-    def __init__(self, dry_run):
-        self.dry = dry_run
+    def __init__(self, dry_run, flag=None):
+        self.cli_dry = dry_run
+        self.flag = flag
+        self.pressed = set()  # keys really held down on the virtual device
         self.ui = None
         if not dry_run:
             if UInput is None:
                 sys.exit("python-evdev is not available")
             self.ui = UInput({e.EV_KEY: key_codes()}, name="TV Remote (CEC-Over-LAN)")
 
+    def is_dry(self):
+        return self.cli_dry or bool(self.flag and self.flag.on)
+
     def key(self, name, value):
-        if self.dry:
+        # in dry-run nothing is pressed, but a key that is already down is still released
+        if self.is_dry() and not (value == 0 and name in self.pressed):
             print(f"[dry-run] {name} {'DOWN' if value else 'UP'}", flush=True)
             return
-        self.ui.write(e.EV_KEY, getattr(e, name), value)
-        self.ui.syn()
+        self.pressed.add(name) if value else self.pressed.discard(name)
+        if self.ui is not None:
+            self.ui.write(e.EV_KEY, getattr(e, name), value)
+            self.ui.syn()
 
 
 class Router:
@@ -286,7 +317,7 @@ class Router:
     def __init__(self, keymap, out, launcher=None):
         self.keymap = keymap
         self.out = out
-        self.launcher = launcher or (lambda action: launch(action, out.dry))
+        self.launcher = launcher or (lambda action: launch(action, out.is_dry()))
         self.lock = threading.RLock()
         self.holds = {}   # remote key -> injected names currently held down
         self.timers = {}  # remote key -> pending long-press Timer
@@ -408,7 +439,7 @@ class Gate:
 
 def run(args):
     keymap = Keymap(args.keymap, args.back_key)
-    out = Out(args.dry_run)
+    out = Out(args.dry_run, DryFlag(args.dryrun_file))
     router = Router(keymap, out)
     gate = Gate(args, router)
     current = {"proc": None}
@@ -463,6 +494,8 @@ if __name__ == "__main__":
     p.add_argument("--target", required=True, help="IP:port of the wireless debugging connection")
     p.add_argument("--dry-run", action="store_true", help="print what would be injected/launched")
     p.add_argument("--keymap", default=str(KEYMAP_FILE), help="path of keymap.json")
+    p.add_argument("--dryrun-file", default=str(DRYRUN_FILE),
+                   help="while this file exists nothing is pressed or launched, only logged")
     p.add_argument("--back-key", default="KEY_BACKSPACE", choices=["KEY_BACKSPACE", "KEY_ESC"],
                    help="Back key of the built-in default mapping")
     p.add_argument("--active-path", default="0x1000",

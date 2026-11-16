@@ -70,6 +70,15 @@
   </div>
 
   <div class="card">
+    <h2>Dry run</h2>
+    <label class="radio"><input type="checkbox" id="dryCb">
+      <span><b>Dry run</b>: remote buttons do NOT press anything or launch anything on the machine; the receiver only lists what it would do.</span></label>
+    <div class="msg" id="mDry"></div>
+    <div class="hint">Latest actions (newest last). "would …" = dry run, nothing happened; "LAUNCHED" = a real launch:</div>
+    <div class="hint" id="dryList">—</div>
+  </div>
+
+  <div class="card">
     <h2>1. Pair (only if asked)</h2>
     <ol>
       <li>On the TV: Developer options, Wireless debugging, turn it on.</li>
@@ -160,11 +169,28 @@ async function refresh() {
     setClass($('sLink'), s.link, s.link === 'device');
     setClass($('sScreen'), s.on_screen, s.on_screen === 'yes');
     $('sTarget').textContent = s.target || 'not set';
+    if (document.activeElement !== $('dryCb')) $('dryCb').checked = !!s.dry_run;
+    $('mDry').textContent = s.dry_run ? 'Dry run is ON: buttons do nothing on the machine.' : 'Dry run is OFF: buttons are applied for real.';
+    $('mDry').className = 'msg ' + (s.dry_run ? 'good' : 'warn');
+    const dl = $('dryList'); dl.textContent = '';
+    (s.would || []).forEach(l => {
+      let t = l;
+      if (l.startsWith('[dry-run] ')) t = 'would press ' + l.slice(10);
+      else if (l.endsWith('(dry-run)')) t = 'would launch ' + l.slice(9, -10).trim();
+      else if (l.startsWith('[launch] ')) t = 'LAUNCHED (for real) ' + l.slice(9);
+      dl.append(el('div', { textContent: t }));
+    });
+    if (!(s.would || []).length) dl.textContent = 'nothing yet';
     if (s.target && !$('host').value) {
       const [h, p] = s.target.split(':'); $('host').value = h; if (!$('cport').value) $('cport').value = p;
     }
   } catch (e) { $('sService').textContent = e.message; }
 }
+$('dryCb').onchange = async () => {
+  const want = $('dryCb').checked;
+  try { const r = await api('/api/dryrun', { on: want }); if (!r.ok) { $('dryCb').checked = !want; } } catch (e) { $('dryCb').checked = !want; }
+  refresh();
+};
 async function act(btn, out, path, body, after) {
   btn.disabled = true; out.textContent = 'Working…';
   try { const r = await api(path, body);

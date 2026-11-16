@@ -104,7 +104,11 @@ def status(_q=None):
     for line in journal.splitlines():
         if line.startswith("[source]"):
             on_screen = "yes" if line.endswith("yes") else "no"
-    return {"target": target, "service": active, "link": link, "on_screen": on_screen}
+    _, log = run(["journalctl", "--user", "-u", SERVICE, "-n", "200", "-o", "cat", "--no-pager"], 5)
+    would = [ln for ln in log.splitlines()
+             if (ln.startswith("[dry-run] ") or ln.startswith("[launch] ")) and "mode" not in ln]
+    return {"target": target, "service": active, "link": link, "on_screen": on_screen,
+            "dry_run": core.DRYRUN_FILE.exists(), "would": would[-10:]}
 
 
 def discover(_q=None):
@@ -304,6 +308,22 @@ def do_keymap(data):
     return {"ok": True, "message": f"saved {len(entries)} keys (applied within a second)"}
 
 
+def do_dryrun(data):
+    """Dry run on: the receiver only logs what it would press or launch."""
+    on = data.get("on")
+    if not isinstance(on, bool):
+        return {"ok": False, "message": "invalid value"}
+    try:
+        if on:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            core.DRYRUN_FILE.touch()
+        else:
+            core.DRYRUN_FILE.unlink(missing_ok=True)
+    except OSError as exc:
+        return {"ok": False, "message": str(exc)}
+    return {"ok": True, "message": "dry run " + ("ON: nothing is applied" if on else "OFF: keys are applied")}
+
+
 def do_keymap_reset(_data):
     try:
         KEYMAP_FILE.unlink()
@@ -325,7 +345,7 @@ def recent(_q=None):
 
 
 POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service,
-        "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset}
+        "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset, "/api/dryrun": do_dryrun}
 GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
        "/api/recent": recent, "/api/apps": list_apps, "/api/events": events,
        "/api/profiles": profiles}

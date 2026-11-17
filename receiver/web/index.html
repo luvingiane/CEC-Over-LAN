@@ -127,6 +127,8 @@
   .applist button { text-align:left; margin:0; border-radius:0; background:transparent; color:var(--fg);
                     border:0; border-bottom:1px solid var(--line); padding:12px; font-size:15px; font-weight:500; }
   .applist button.on { color:var(--accent); font-weight:700; }
+  textarea { width:100%; padding:10px; font:13px/1.35 ui-monospace,Menlo,Consolas,monospace; border:1px solid var(--line);
+             border-radius:8px; background:var(--bg); color:var(--fg); }
   .gl { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:0 8px;
         border-radius:999px; font-size:12px; font-weight:700; background:#2a2f38; color:#fff; flex:none;
         border:1px solid rgba(255,255,255,.35); white-space:nowrap; }
@@ -219,6 +221,23 @@
     <button id="bConnect">Connect and restart receiver</button>
     <button class="alt" id="bFind">Auto-detect ports</button>
     <div class="msg" id="mConnect"></div>
+  </div>
+
+  <div class="card" id="remoteCard">
+    <h2>Your remote</h2>
+    <div class="hint" id="remoteName">built-in remote</div>
+    <div class="hint">The drawing is the Xiaomi Google TV remote. For another remote, copy the prompt, paste it into your AI chat
+      together with a well-lit photo of the remote, then paste the JSON it answers with into the box below.</div>
+    <button class="alt" id="bPromptShow">Show the prompt to copy</button>
+    <div id="promptBox" hidden>
+      <textarea id="promptText" readonly rows="6"></textarea>
+      <button id="bPromptCopy">Copy the prompt</button>
+    </div>
+    <label for="remoteJson">JSON from your AI</label>
+    <textarea id="remoteJson" rows="6" placeholder='{"name": "...", "layout": [...], "buttons": {...}}' autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+    <button id="bRemoteUse">Check and use this remote</button>
+    <button class="alt" id="bRemoteReset">Back to the built-in remote</button>
+    <div class="msg" id="mRemote"></div>
   </div>
 
   <div class="card wiz" id="wizCard">
@@ -806,7 +825,39 @@ function toast(text) {
 
 // ---------- the drawn remote ----------
 let REMOTE = { buttons: {} };
-async function loadRemote() { try { const r = await api('/api/remote'); if (r.ok) REMOTE = r; } catch (e) {} renderPad(); }
+async function loadRemote() {
+  try { const r = await api('/api/remote'); if (r.ok) REMOTE = r; } catch (e) {}
+  renderPad();
+  const n = $('remoteName'); if (n) n.textContent = (REMOTE.custom ? 'Your own remote: ' : 'Built-in remote: ') + (REMOTE.name || '');
+}
+$('bPromptShow').onclick = async () => {
+  const box = $('promptBox'); box.hidden = !box.hidden;
+  if (!box.hidden && !$('promptText').value) {
+    try { const r = await api('/api/remote/prompt'); $('promptText').value = r.ok ? r.text : r.message; } catch (e) { $('promptText').value = e.message; }
+  }
+};
+$('bPromptCopy').onclick = async () => {
+  const ta = $('promptText'); ta.select();
+  let ok = false;
+  try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (e) {}
+  if (!ok) { try { ok = document.execCommand('copy'); } catch (e) {} }   // plain http: no clipboard API
+  toast(ok ? 'Prompt copied' : 'Select the text and copy it by hand');
+};
+$('bRemoteUse').onclick = async () => {
+  const out = $('mRemote'); out.className = 'msg'; out.textContent = '';
+  const raw = $('remoteJson').value.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');   // a fenced block is fine
+  if (!raw) { out.textContent = 'Paste the JSON first.'; out.className = 'msg warn'; return; }
+  try {
+    const r = await api('/api/remote/model', { model: raw });
+    out.textContent = r.message; out.className = 'msg ' + (r.ok ? 'good' : 'warn');
+    if (r.ok) { $('remoteJson').value = ''; await loadRemote(); showTab('remote'); }
+  } catch (e) { out.textContent = e.message; out.className = 'msg warn'; }
+};
+$('bRemoteReset').onclick = async () => {
+  const out = $('mRemote');
+  try { const r = await api('/api/remote/model', { reset: true }); out.textContent = r.message; out.className = 'msg good'; await loadRemote(); }
+  catch (e) { out.textContent = e.message; out.className = 'msg warn'; }
+};
 function codeToButton() {
   const m = {}; Object.entries(REMOTE.buttons).forEach(([id, b]) => { if (b.code) m[b.code] = id; }); return m;
 }
@@ -820,32 +871,39 @@ function pbtn(id, cls) {
   n.onclick = () => openSheet(id);
   return n;
 }
+const SHAPE_CLASS = { round: 'round', small: 'sm', wide: 'pillb', color: 'col' };
+function padLayout() {   // the model's layout; without one, rows of three in the order of the buttons
+  if (Array.isArray(REMOTE.layout) && REMOTE.layout.length) return REMOTE.layout;
+  const ids = Object.keys(REMOTE.buttons), rows = [];
+  for (let i = 0; i < ids.length; i += 3) rows.push({ items: ids.slice(i, i + 3) });
+  return rows;
+}
 function renderPad() {
   const pad = $('pad'); if (!pad) return; pad.textContent = '';
   const row = (cls, ...kids) => el('div', { className: 'prow ' + cls }, ...kids);
-  const rocker = (a, b) => el('div', { className: 'rocker' }, pbtn(a, ''), pbtn(b, ''));
-  pad.append(row('between', pbtn('power', 'round'), pbtn('mic', 'round')));
-  [['n1', 'n2', 'n3'], ['n4', 'n5', 'n6'], ['n7', 'n8', 'n9']].forEach(r => pad.append(row('', ...r.map(i => pbtn(i, 'round')))));
-  pad.append(row('', pbtn('info', 'sm'), pbtn('n0', 'round'), pbtn('ttx', 'sm')));
-  pad.append(row('', pbtn('source', 'sm'), pbtn('epg', 'sm'), pbtn('audio', 'sm')));
-  pad.append(row('', pbtn('netflix', 'pillb'), pbtn('prime', 'pillb')));
-  pad.append(row('', pbtn('youtube', 'pillb'), pbtn('tvplus', 'pillb')));
-  pad.append(row('', pbtn('star', 'pillb'), pbtn('livetv', 'pillb')));
-  pad.append(el('div', { className: 'dpad' }, pbtn('up', 'up'), pbtn('left', 'left'), pbtn('right', 'right'), pbtn('down', 'down'), pbtn('ok', 'okb')));
-  pad.append(row('', pbtn('settings', 'round'), pbtn('back', 'round'), pbtn('home', 'round')));
-  pad.append(row('', rocker('volup', 'voldown'), el('div', { className: 'stack' }, pbtn('exit', 'sm'), pbtn('mute', 'sm')), rocker('chup', 'chdown')));
-  pad.append(row('', ...['red', 'green', 'yellow', 'blue'].map(i => pbtn(i, 'col ' + i))));
+  const slot = item => {
+    if (typeof item === 'string') {
+      const b = REMOTE.buttons[item] || {}, sh = b.shape || 'round';
+      return pbtn(item, SHAPE_CLASS[sh] + (sh === 'color' ? ' ' + (b.color || '') : ''));
+    }
+    if (item.rocker) return el('div', { className: 'rocker' }, pbtn(item.rocker[0], ''), pbtn(item.rocker[1], ''));
+    if (item.stack) return el('div', { className: 'stack' }, ...item.stack.map(i => pbtn(i, 'sm')));
+    return el('span');
+  };
+  padLayout().forEach(r => {
+    if (r.dpad) pad.append(el('div', { className: 'dpad' }, pbtn(r.dpad.up, 'up'), pbtn(r.dpad.left, 'left'),
+      pbtn(r.dpad.right, 'right'), pbtn(r.dpad.down, 'down'), pbtn(r.dpad.ok, 'okb')));
+    else pad.append(row(r.align === 'between' ? 'between' : '', ...r.items.map(slot)));
+  });
   fitPad();
 }
 
 // ---------- button glyphs (as in Steam's hints) and the per-app shortcut view ----------
-const GLYPH_KIND = { red: 'col red', green: 'col green', yellow: 'col yellow', blue: 'col blue' };
-['exit', 'mute', 'info', 'ttx', 'epg', 'audio', 'source', 'netflix', 'prime', 'youtube', 'tvplus', 'star', 'livetv']
-  .forEach(i => { GLYPH_KIND[i] = 'pill'; });
 function glyph(code) {
   const id = codeToButton()[code], b = id && REMOTE.buttons[id];
   if (!b) return el('span', { className: 'gl pill', textContent: (LABELS[code] || String(code).replace('KEY_', '')) });
-  return el('span', { className: 'gl ' + (GLYPH_KIND[id] || ''), textContent: b.label, title: b.title });
+  const cls = b.kind === 'col' ? 'col ' + b.color : b.kind === 'pill' ? 'pill' : '';
+  return el('span', { className: 'gl ' + cls, textContent: b.label, title: b.title });
 }
 const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 function findApp(match) {

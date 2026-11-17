@@ -113,24 +113,19 @@ def status(_q=None):
 
 
 def discover(_q=None):
-    """Best effort: read adb's mDNS list (needs the Wireless debugging screens open on the TV)."""
-    _, out = run(["adb", "mdns", "services"], 8)
+    """Fills in the ports from the mDNS announcements of the TV (Avahi, then adb's own list). Both
+    Wireless debugging screens announce: the main one (connect) always, the pairing dialog only
+    while it is open."""
     found = {"host": "", "pair_port": 0, "connect_port": 0}
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) < 3 or ":" not in parts[-1]:
-            continue
-        host, _, port = parts[-1].rpartition(":")
-        if not (valid_host(host) and port.isdigit()):
-            continue
-        if "_adb-tls-pairing" in line:
-            found["host"], found["pair_port"] = host, int(port)
-        elif "_adb-tls-connect" in line:
-            found["host"] = found["host"] or host
-            found["connect_port"] = int(port)
+    for host, port in core.mdns_services("_adb-tls-pairing._tcp"):
+        if valid_host(host):
+            found["host"], found["pair_port"] = host, port
+    for host, port in core.mdns_services("_adb-tls-connect._tcp"):
+        if valid_host(host) and (not found["host"] or host == found["host"]):
+            found["host"], found["connect_port"] = host, port
     ok = bool(found["host"])
     return {"ok": ok, "found": found,
-            "message": "ports filled in" if ok else "nothing discovered (enter the values by hand)"}
+            "message": "ports filled in" if ok else "nothing announced (is Wireless debugging on? or enter the values by hand)"}
 
 
 def do_pair(data):
@@ -381,10 +376,123 @@ def _read_learned():
         return {}
 
 
+CUSTOM_REMOTE_FILE = STATE_DIR / "remote.json"   # the owner's own remote, generated with REMOTE-PROMPT.md
+BUILTIN_REMOTE_FILE = HERE / "web" / "remote.json"
+PROMPT_FILE = HERE / "web" / "remote-prompt.md"
+BUTTON_ID = re.compile(r"^[a-z0-9_]{1,24}$")
+SHAPES = {"round": "round", "small": "pill", "wide": "pill", "color": "col"}   # shape -> glyph kind
+COLORS = {"red", "green", "yellow", "blue"}
+
+
+def validate_remote(model):
+    """None if the model of a remote is usable, otherwise a sentence saying what is wrong."""
+    if not isinstance(model, dict) or not isinstance(model.get("buttons"), dict):
+        return 'the JSON needs a "buttons" object'
+    buttons = model["buttons"]
+    if not 1 <= len(buttons) <= 80:
+        return "between 1 and 80 buttons"
+    codes = {}
+    for bid, b in buttons.items():
+        if not BUTTON_ID.match(bid) or not isinstance(b, dict):
+            return f"button id {bid!r}: lower-case letters, digits and _ only (max 24)"
+        if not isinstance(b.get("label"), str) or not 1 <= len(b["label"]) <= 12:
+            return f'{bid}: "label" is text of 1 to 12 characters'
+        if not isinstance(b.get("title", ""), str) or len(b.get("title", "")) > 40:
+            return f'{bid}: "title" is text of at most 40 characters'
+        code = b.get("code")
+        if code is not None:
+            if not isinstance(code, str) or not core.KEY_NAME.match(code):
+                return f'{bid}: "code" is null or a name like KEY_VOLUMEUP'
+            if code in codes:
+                return f'{bid} and {codes[code]} have the same code {code}'
+            codes[code] = bid
+        shape = b.get("shape", "round")
+        if shape not in SHAPES:
+            return f'{bid}: "shape" is one of {", ".join(sorted(SHAPES))}'
+        if shape == "color" and b.get("color") not in COLORS:
+            return f'{bid}: a "color" button needs "color": one of {", ".join(sorted(COLORS))}'
+    layout = model.get("layout")
+    if layout is None:
+        return None
+    if not isinstance(layout, list) or not 1 <= len(layout) <= 30:
+        return '"layout" is a list of 1 to 30 rows'
+    used = set()
+
+    def use(bid):
+        if bid not in buttons:
+            return f'the layout uses "{bid}", which is not in "buttons"'
+        if bid in used:
+            return f'"{bid}" appears twice in the layout'
+        used.add(bid)
+        return None
+
+    for row in layout:
+        if not isinstance(row, dict):
+            return "every layout row is an object"
+        if "dpad" in row:
+            d = row["dpad"]
+            if not isinstance(d, dict) or set(d) != {"up", "down", "left", "right", "ok"}:
+                return '"dpad" needs exactly up, down, left, right and ok'
+            ids = list(d.values())
+        else:
+            items = row.get("items")
+            if not isinstance(items, list) or not 1 <= len(items) <= 6:
+                return 'a row needs "items": 1 to 6 slots'
+            if row.get("align", "center") not in ("center", "between"):
+                return '"align" is center or between'
+            ids = []
+            for it in items:
+                if isinstance(it, str):
+                    ids.append(it)
+                elif isinstance(it, dict) and len(it) == 1 and next(iter(it)) in ("rocker", "stack"):
+                    pair = next(iter(it.values()))
+                    if not isinstance(pair, list) or len(pair) != 2 or not all(isinstance(x, str) for x in pair):
+                        return '"rocker" and "stack" take exactly two button ids'
+                    ids += pair
+                else:
+                    return 'a slot is a button id, {"rocker": [a, b]} or {"stack": [a, b]}'
+        for bid in ids:
+            if not isinstance(bid, str):
+                return "button ids are text"
+            err = use(bid)
+            if err:
+                return err
+    return None
+
+
+def button_kinds(model):
+    """Adds to every button how it is drawn as a glyph: kind round|pill|col and color."""
+    kinds = {}
+    for row in model.get("layout") or []:
+        if "dpad" in row:
+            kinds.update({i: "round" for i in row["dpad"].values()})
+        for it in row.get("items", []):
+            if isinstance(it, dict) and "rocker" in it:
+                kinds.update({i: "round" for i in it["rocker"]})
+            elif isinstance(it, dict) and "stack" in it:
+                kinds.update({i: "pill" for i in it["stack"]})
+    for bid, b in model["buttons"].items():
+        shape = b.get("shape", "round")
+        kind = SHAPES[shape] if shape != "round" else kinds.get(bid, "round")
+        b["kind"] = kind
+        b["color"] = b.get("color", "") if kind == "col" else ""
+
+
+def _load_remote():
+    """(model, custom?) : the owner's own remote if it is there and valid, else the built-in one."""
+    try:
+        own = json.loads(CUSTOM_REMOTE_FILE.read_text())
+        if validate_remote(own) is None:
+            return own, True
+    except (OSError, ValueError):
+        pass
+    return json.loads(BUILTIN_REMOTE_FILE.read_text()), False
+
+
 def remote_model():
     """The physical remote: its buttons and the key code each one sends (learned codes win)."""
     try:
-        model = json.loads((HERE / "web" / "remote.json").read_text())
+        model, custom = _load_remote()
     except (OSError, ValueError):
         return {"ok": False, "message": "remote.json is missing or broken", "buttons": {}}
     for bid, code in _read_learned().items():
@@ -392,7 +500,43 @@ def remote_model():
         if btn is not None and isinstance(code, str) and core.KEY_NAME.match(code):
             btn["code"], btn["learned"] = code, True
             btn.pop("guess", None)
-    return {"ok": True, **model}
+    button_kinds(model)
+    return {"ok": True, "custom": custom, **model}
+
+
+def do_remote_model(data):
+    """Use a remote generated by the owner's AI ({"model": {...}}) or go back to the built-in one
+    ({"reset": true})."""
+    if data.get("reset") is True:
+        try:
+            CUSTOM_REMOTE_FILE.unlink()
+        except FileNotFoundError:
+            pass
+        return {"ok": True, "message": "back to the built-in remote"}
+    model = data.get("model")
+    if isinstance(model, str):
+        try:
+            model = json.loads(model)
+        except ValueError as exc:
+            return {"ok": False, "message": f"not valid JSON: {exc}"}
+    err = validate_remote(model)
+    if err:
+        return {"ok": False, "message": err}
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = CUSTOM_REMOTE_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(model, f, indent=1, ensure_ascii=False)
+    os.replace(tmp, CUSTOM_REMOTE_FILE)
+    LEARNED_FILE.unlink(missing_ok=True)   # codes learned on another remote say nothing about this one
+    return {"ok": True, "message": f'saved: {len(model["buttons"])} buttons'}
+
+
+def get_remote_prompt(_q=None):
+    try:
+        return {"ok": True, "text": PROMPT_FILE.read_text(encoding="utf8")}
+    except OSError:
+        return {"ok": False, "message": "remote-prompt.md is missing"}
 
 
 def get_remote(_q=None):
@@ -510,10 +654,12 @@ def recent(_q=None):
 
 POST = {"/api/pair": do_pair, "/api/connect": do_connect, "/api/service": do_service,
         "/api/keymap": do_keymap, "/api/keymap/reset": do_keymap_reset, "/api/dryrun": do_dryrun,
-        "/api/pointer": do_pointer, "/api/remote": do_remote}
+        "/api/pointer": do_pointer, "/api/remote": do_remote,
+        "/api/remote/model": do_remote_model}
 GET = {"/api/status": status, "/api/discover": discover, "/api/keymap": get_keymap,
        "/api/recent": recent, "/api/apps": list_apps, "/api/events": events,
-       "/api/profiles": profiles, "/api/monitor": monitor, "/api/remote": get_remote}
+       "/api/profiles": profiles, "/api/monitor": monitor, "/api/remote": get_remote,
+       "/api/remote/prompt": get_remote_prompt}
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -952,6 +952,88 @@ class Gate:
             self.stop.wait(self.args.poll)
 
 
+ENV_FILE = STATE_DIR / "tv-remote.env"
+
+
+def parse_avahi(text, service):
+    """(host, port) pairs of the IPv4 entries that `avahi-browse -rpt <service>` printed."""
+    found = []
+    for line in text.splitlines():
+        f = line.split(";")
+        if len(f) >= 9 and f[0] == "=" and f[2] == "IPv4" and f[4] == service and f[8].isdigit():
+            found.append((f[7], int(f[8])))
+    return found
+
+
+def parse_adb_mdns(text, service):
+    found = []
+    for line in text.splitlines():
+        parts = line.split()
+        if service in line and parts and ":" in parts[-1]:
+            host, _, port = parts[-1].rpartition(":")
+            if port.isdigit():
+                found.append((host, int(port)))
+    return found
+
+
+def mdns_services(service, runner=subprocess.run):
+    """Where the TV announces `service` (_adb-tls-connect._tcp or _adb-tls-pairing._tcp): the
+    Wireless debugging port changes every time it is switched on, but it is announced over mDNS.
+    Asks Avahi first (adb's own mDNS list is empty on many Linux setups), then adb."""
+    for cmd, parse in ((["avahi-browse", "-rpt", service], parse_avahi),
+                       (["adb", "mdns", "services"], parse_adb_mdns)):
+        try:
+            r = runner(cmd, capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        found = parse(r.stdout, service)
+        if found:
+            return found
+    return []
+
+
+def discover_port(host, lookup=mdns_services):
+    """The Wireless debugging connection port the TV at `host` announces now, or None."""
+    for h, port in lookup("_adb-tls-connect._tcp"):
+        if h == host:
+            return port
+    return None
+
+
+def save_target(target, path=None):
+    """Remember the new IP:port for the next start of the service (the web UI reads it too)."""
+    path = Path(path or ENV_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(f"TV_TARGET={target}\n")
+    os.replace(tmp, path)
+
+
+def adb_connect(args, runner=subprocess.run, discover=discover_port, save=save_target):
+    """Connect to args.target. If the TV refuses (Wireless debugging was switched off and on, so
+    the port changed), find the new port over mDNS, switch to it and try once more.
+    Returns True when connected."""
+    for attempt in (0, 1):
+        runner(["adb", "disconnect", args.target], capture_output=True, timeout=10)
+        try:
+            r = runner(["adb", "connect", args.target], capture_output=True, text=True, timeout=15)
+            said = (r.stdout or "").strip()
+        except subprocess.TimeoutExpired:   # a closed port that drops packets: no refusal, just silence
+            said = ""
+        if said.startswith(("connected", "already connected")):
+            return True
+        host = args.target.rpartition(":")[0]
+        port = None if attempt else discover(host)
+        if not port or f"{host}:{port}" == args.target:
+            return False
+        args.target = f"{host}:{port}"
+        save(args.target)
+        print(f"[adb] the TV now listens on port {port} (found over mDNS), saved for the next start", flush=True)
+    return False
+
+
 def run(args):
     keymap = Keymap(args.keymap, args.back_key)
     out = Out(args.dry_run, DryFlag(args.dryrun_file))
@@ -976,11 +1058,15 @@ def run(args):
     try:
         while True:
             try:
-                # clear any stale "offline" entry before reconnecting
-                subprocess.run(["adb", "disconnect", args.target], capture_output=True, timeout=10)
-                subprocess.run(["adb", "connect", args.target], capture_output=True, timeout=15)
+                # clears any stale "offline" entry first; follows the TV when its port changed
+                connected = adb_connect(args)
             except (subprocess.TimeoutExpired, OSError) as exc:
                 print(f"adb connect failed ({type(exc).__name__}), retrying in {delay}s", flush=True)
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+            if not connected:
+                print(f"cannot reach {args.target}: is Wireless debugging on? retrying in {delay}s", flush=True)
                 time.sleep(delay)
                 delay = min(delay * 2, 30)
                 continue

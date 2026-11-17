@@ -40,7 +40,8 @@ STEAM_LABEL = {"KEY_ESC": ("Esc",), "KEY_ENTER": ("Enter", "Invio"), "KEY_SPACE"
 STEAM_LABEL.update({f"KEY_F{i}": (f"F{i}",) for i in range(1, 13)})
 STEAM_LABEL.update({f"KEY_{c}": (c,) for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"})
 
-# how each remote button is drawn: 'round' icon, 'pill' text, 'col' colour
+# how a button is drawn when the remote model does not say (the built-in Xiaomi model does):
+# 'round' icon, 'pill' text, 'col' colour
 KIND = {**{b: "round" for b in ("back", "home", "settings", "power", "mic", "up", "down", "left", "right",
                                 "volup", "voldown", "chup", "chdown", "ok")},
         **{f"n{i}": "round" for i in range(10)},
@@ -76,9 +77,10 @@ def build_map(entries, buttons):
         caps = STEAM_LABEL.get(tap["keys"][0])
         if not caps:
             continue
-        kind = KIND.get(bid, "pill")
+        kind = button.get("kind") or KIND.get(bid, "pill")   # the model says how a button is drawn
+        color = button.get("color") or (bid if kind == "col" else "")
         glyph = {"label": button["label"], "kind": kind,
-                 "color": bid if kind == "col" else "", "title": button.get("title", bid)}
+                 "color": color if kind == "col" else "", "title": button.get("title", bid)}
         for cap in caps:
             if cap not in result or order.get(bid, 99) < rank[cap]:
                 result[cap], rank[cap] = glyph, order.get(bid, 99)

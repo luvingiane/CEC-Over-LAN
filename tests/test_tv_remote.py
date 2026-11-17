@@ -621,6 +621,68 @@ class RemoteModel(unittest.TestCase):
             self.assertFalse(self.web.do_remote(bad)["ok"], bad)
 
 
+class CustomRemote(unittest.TestCase):
+    """A remote described by the owner's AI (REMOTE-PROMPT) replaces the built-in drawing."""
+
+    def setUp(self):
+        import tv_remote_web as web
+        self.web = web
+        self.old = (web.LEARNED_FILE, web.CUSTOM_REMOTE_FILE)
+        tmp = Path(tempfile.mkdtemp())
+        web.LEARNED_FILE, web.CUSTOM_REMOTE_FILE = tmp / "remote-learned.json", tmp / "remote.json"
+        self.model = json.loads((Path(web.__file__).parent / "web" / "remote-prompt.md").read_text()
+                                .split("## Example")[1].split("```")[1])
+
+    def tearDown(self):
+        self.web.LEARNED_FILE, self.web.CUSTOM_REMOTE_FILE = self.old
+
+    def test_the_example_in_the_prompt_is_valid(self):
+        self.assertIsNone(self.web.validate_remote(self.model))
+
+    def test_builtin_model_is_valid_and_every_button_is_in_the_layout(self):
+        m = json.loads(self.web.BUILTIN_REMOTE_FILE.read_text())
+        self.assertIsNone(self.web.validate_remote(m))
+        used = set()
+        for row in m["layout"]:
+            if "dpad" in row:
+                used |= set(row["dpad"].values())
+            for it in row.get("items", []):
+                used |= set([it] if isinstance(it, str) else next(iter(it.values())))
+        self.assertEqual(used, set(m["buttons"]))
+
+    def test_importing_and_resetting(self):
+        self.assertTrue(self.web.do_remote_model({"model": json.dumps(self.model)})["ok"])
+        m = self.web.remote_model()
+        self.assertTrue(m["custom"])
+        self.assertEqual(m["name"], "Acme Streamer remote")
+        self.assertEqual((m["buttons"]["up"]["kind"], m["buttons"]["info"]["kind"], m["buttons"]["red"]["kind"],
+                          m["buttons"]["red"]["color"]), ("round", "pill", "col", "red"))
+        self.assertTrue(self.web.do_remote_model({"reset": True})["ok"])
+        self.assertFalse(self.web.remote_model()["custom"])
+
+    def test_importing_forgets_the_codes_learned_on_the_old_remote(self):
+        self.web.do_remote({"id": "info", "code": "KEY_INFO"})
+        self.web.do_remote_model({"model": self.model})
+        self.assertIsNone(self.web.remote_model()["buttons"]["info"]["code"])
+
+    def test_broken_models_are_refused_with_a_reason(self):
+        import copy
+        def bad(mutate):
+            m = copy.deepcopy(self.model)
+            mutate(m)
+            return self.web.validate_remote(m)
+        self.assertIn("not in", bad(lambda m: m["layout"].append({"items": ["ghost"]})))
+        self.assertIn("twice", bad(lambda m: m["layout"].append({"items": ["up"]})))
+        self.assertIn("same code", bad(lambda m: m["buttons"]["mic"].update(code="KEY_UP")))
+        self.assertIn("code", bad(lambda m: m["buttons"]["mic"].update(code="rm -rf")))
+        self.assertIn("color", bad(lambda m: m["buttons"]["red"].pop("color")))
+        self.assertIn("shape", bad(lambda m: m["buttons"]["mic"].update(shape="triangle")))
+        self.assertIn("dpad", bad(lambda m: m["layout"][1]["dpad"].pop("ok")))
+        self.assertIn("label", bad(lambda m: m["buttons"]["mic"].update(label="")))
+        self.assertFalse(self.web.do_remote_model({"model": "{not json"})["ok"])
+        self.assertFalse(self.web.CUSTOM_REMOTE_FILE.exists())
+
+
 def win(pid, cls="app"):
     return {"pid": pid, "class": cls, "app_id": "", "title": "", "comm": cls}
 
@@ -968,6 +1030,77 @@ class MouseActions(unittest.TestCase):
         self.assertEqual(Spy.calls, 0)
         self.assertEqual([x for x in ui.events if x != "syn"],
                          [(core.e.EV_KEY, core.e.BTN_LEFT, 1), (core.e.EV_KEY, core.e.BTN_LEFT, 0)])
+
+
+AVAHI = ('+;ens18;IPv4;adb-X-aAUnrY;_adb-tls-connect._tcp;local\n'
+         '=;ens18;IPv6;adb-X-aAUnrY;_adb-tls-connect._tcp;local;Android.local;fe80::1;45241;"v=1"\n'
+         '=;ens18;IPv4;adb-X-aAUnrY;_adb-tls-connect._tcp;local;Android.local;192.168.96.200;45241;"v=1"\n')
+
+
+class Reconnect(unittest.TestCase):
+    class Args:
+        target = "192.168.96.200:40000"
+
+    def runner(self, replies):
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            out = replies.pop(0) if cmd[1] == "connect" else ""
+            return type("R", (), {"stdout": out})()
+        run.calls = calls
+        return run
+
+    def test_parsers(self):
+        self.assertEqual(core.parse_avahi(AVAHI, "_adb-tls-connect._tcp"), [("192.168.96.200", 45241)])
+        mdns = "List of discovered mdns services\nadb-X\t_adb-tls-connect._tcp\t192.168.96.200:45241\n"
+        self.assertEqual(core.parse_adb_mdns(mdns, "_adb-tls-connect._tcp"), [("192.168.96.200", 45241)])
+        self.assertEqual(core.parse_avahi("", "_adb-tls-connect._tcp"), [])
+
+    def test_follows_the_port_when_the_tv_changed_it(self):
+        saved, args = [], self.Args()
+        run = self.runner(["failed to connect to 192.168.96.200:40000", "connected to 192.168.96.200:45241"])
+        ok = core.adb_connect(args, runner=run, discover=lambda h: 45241, save=saved.append)
+        self.assertTrue(ok)
+        self.assertEqual(args.target, "192.168.96.200:45241")
+        self.assertEqual(saved, ["192.168.96.200:45241"])
+
+    def test_nothing_announced_means_not_connected(self):
+        args = self.Args()
+        run = self.runner(["failed to connect"])
+        self.assertFalse(core.adb_connect(args, runner=run, discover=lambda h: None, save=lambda t: None))
+        self.assertEqual(args.target, "192.168.96.200:40000")
+
+    def test_a_silent_port_still_triggers_the_lookup(self):
+        args, replies = self.Args(), ["silence", "connected to 192.168.96.200:45241"]
+
+        def run(cmd, **kw):
+            if cmd[1] == "connect":
+                reply = replies.pop(0)
+                if reply == "silence":
+                    raise core.subprocess.TimeoutExpired(cmd, 15)
+                return type("R", (), {"stdout": reply})()
+            return type("R", (), {"stdout": ""})()
+        self.assertTrue(core.adb_connect(args, runner=run, discover=lambda h: 45241, save=lambda t: None))
+        self.assertEqual(args.target, "192.168.96.200:45241")
+
+    def test_same_port_is_not_retried_forever(self):
+        args = self.Args()
+        run = self.runner(["failed to connect"])
+        self.assertFalse(core.adb_connect(args, runner=run, discover=lambda h: 40000, save=lambda t: None))
+        self.assertEqual(len([c for c in run.calls if c[1] == "connect"]), 1)
+
+    def test_connected_at_once_looks_nothing_up(self):
+        args = self.Args()
+        run = self.runner(["already connected to 192.168.96.200:40000"])
+        def boom(h):
+            raise AssertionError("discovery must not run")
+        self.assertTrue(core.adb_connect(args, runner=run, discover=boom, save=boom))
+
+    def test_discover_port_only_for_the_tvs_own_address(self):
+        look = lambda s: [("192.168.96.7", 1111), ("192.168.96.200", 45241)]
+        self.assertEqual(core.discover_port("192.168.96.200", lookup=look), 45241)
+        self.assertIsNone(core.discover_port("192.168.96.99", lookup=look))
 
 
 if __name__ == "__main__":

@@ -700,9 +700,15 @@ class Focus:
         return {"pid": pid, "class": cls, "app_id": app_id, "title": title, "comm": comm}
 
 
+def match_form(text):
+    """Lower case with runs of spaces and underscores as one space: the log and the monitor show
+    the app as `YouTube_TV` (no spaces), the window class is `YouTube TV`; both must match."""
+    return re.sub(r"[\s_]+", " ", str(text).lower()).strip()
+
+
 def focus_text(f):
-    """Everything an app exception can match on, lower case."""
-    return " ".join([f["class"], f["app_id"], f["title"], f["comm"]]).lower()
+    """Everything an app exception can match on, in match_form."""
+    return match_form(" ".join([f["class"], f["app_id"], f["title"], f["comm"]]))
 
 
 def focus_label(f):
@@ -865,7 +871,7 @@ class Router:
             return entry, None
         blob = focus_text(f)
         for pattern, override in entry["apps"]:
-            if pattern.lower() in blob:
+            if match_form(pattern) in blob:
                 return override, pattern
         return entry, None
 

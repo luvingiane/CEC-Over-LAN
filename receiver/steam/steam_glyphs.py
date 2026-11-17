@@ -55,7 +55,7 @@ PRIORITY = ["ok", "back", "home", "up", "down", "left", "right", "exit", "red", 
 def pick_entry(entry):
     """The action that applies while Steam has the focus (its app exception, if any)."""
     for pattern, override in entry.get("apps") or []:
-        if pattern.lower() in FOCUS_TEXT:
+        if core.match_form(pattern) in FOCUS_TEXT:
             return override
     return entry
 

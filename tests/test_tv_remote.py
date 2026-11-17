@@ -375,6 +375,13 @@ class AppRules(unittest.TestCase):
         self.press(router, new_focus=FakeFocus(**{"class": "gnome-shell"}))  # focus moves mid-press
         self.assertEqual(out.events, [("KEY_BACKSPACE", 1), ("KEY_BACKSPACE", 0)])
 
+    def test_the_name_shown_in_the_log_matches_the_window(self):
+        """The monitor prints YouTube_TV; the window class is "YouTube TV"."""
+        router, out, _ = make_router({"KEY_BACK": {"tap": "KEY_BACKSPACE", "apps": {"YouTube_TV": {"tap": "KEY_LEFT"}}}})
+        router.focus = FakeFocus(**{"class": "YouTube TV"})
+        self.press(router)
+        self.assertEqual(out.events[0], ("KEY_LEFT", 1))
+
     def test_log_shows_the_app_and_the_rule(self):
         router, _ = self.router(FakeFocus(comm="es-de"))
         lines = seen_lines(router, ("KEY_BACK", "DOWN", True))

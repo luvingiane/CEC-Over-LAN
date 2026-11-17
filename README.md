@@ -57,8 +57,13 @@ systemctl --user daemon-reload && systemctl --user enable --now tv-remote tv-rem
 cat ~/cec-over-lan/token          # access token, created on first start (mode 0600)
 ```
 
-<p align="center"><img src="docs/web-ui.png" alt="The pairing web UI on a phone (IP and ports redacted)" width="320"></p>
-more screenshots are coming but interface needs to be unslopped first.
+<p align="center">
+<img src="docs/screenshots/remote.jpg" alt="Remote tab: the drawn remote, scaled to fit the phone screen" width="190">
+<img src="docs/screenshots/apps.jpg" alt="Apps tab: what each button does per application" width="190">
+<img src="docs/screenshots/monitor.jpg" alt="Monitor tab: live key events with the button glyphs" width="190">
+<img src="docs/screenshots/setup.jpg" alt="Setup tab: pairing and connection (address and ports removed)" width="190">
+<img src="docs/screenshots/settings.jpg" alt="Settings tab: status, dry run, mouse pointer (address removed)" width="190">
+</p>
 
 Open `http://<machine-ip>:8765/?t=<token>` on the phone once (the page remembers the token). Then: enter the pairing port and code, tap *Pair*, enter the connection port, tap *Connect and restart receiver*. The page also shows the service state, the adb link and whether the machine is on the TV screen.
 

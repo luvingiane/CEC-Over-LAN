@@ -211,6 +211,7 @@ def parse_desktop(path):
     except OSError:
         return None
     name, kind, in_entry = None, None, False
+    extra = {"icon": "", "wm": "", "exec": ""}
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("["):
@@ -221,13 +222,62 @@ def parse_desktop(path):
         k, _, v = line.partition("=")
         if k == "Name":
             name = v
+        elif k == "Icon":
+            extra["icon"] = v.strip()
+        elif k == "StartupWMClass":
+            extra["wm"] = v.strip()
+        elif k == "Exec":
+            extra["exec"] = v.strip()
         elif k == "Type":
             kind = v
         elif k in ("NoDisplay", "Hidden") and v.strip().lower() == "true":
             return None
     if kind != "Application" or not name:
         return None
-    return {"id": path.name, "name": name}
+    return {"id": path.name, "name": name, **extra}
+
+
+ICON_ROOTS = [Path.home() / ".local/share/icons", Path("/usr/share/icons"),
+              Path.home() / ".local/share/flatpak/exports/share/icons",
+              Path("/var/lib/flatpak/exports/share/icons")]
+ICON_SIZES = ["48x48", "64x64", "128x128", "256x256", "32x32", "scalable"]
+ICON_TYPES = {".png": "image/png", ".svg": "image/svg+xml"}
+ICON_MAX = 60000  # bytes: bigger files stay out of the list
+
+
+def find_icon(name):
+    """Path of the file for a .desktop Icon= value, or None."""
+    if not name:
+        return None
+    if name.startswith("/"):
+        p = Path(name)
+        return p if p.suffix in ICON_TYPES and p.is_file() else None
+    for root in ICON_ROOTS:
+        for size in ICON_SIZES:
+            for ext in (".png", ".svg"):
+                p = root / "hicolor" / size / "apps" / (name + ext)
+                if p.is_file():
+                    return p
+    for ext in (".png", ".svg"):
+        p = Path("/usr/share/pixmaps") / (name + ext)
+        if p.is_file():
+            return p
+    return None
+
+
+def icon_data(name):
+    """The icon as a data: URI (the page cannot send the token with an <img>), or ''."""
+    import base64
+    p = find_icon(name)
+    if not p:
+        return ""
+    try:
+        raw = p.read_bytes()
+    except OSError:
+        return ""
+    if len(raw) > ICON_MAX:
+        return ""
+    return f"data:{ICON_TYPES[p.suffix]};base64," + base64.b64encode(raw).decode()
 
 
 def list_apps(_q=None):
@@ -242,6 +292,7 @@ def list_apps(_q=None):
             if p.name not in apps and core.DESKTOP_ID.match(p.name):
                 info = parse_desktop(p)
                 if info:
+                    info["icon"] = icon_data(info["icon"])
                     apps[p.name] = info
     return {"ok": True, "apps": sorted(apps.values(), key=lambda a: a["name"].lower())}
 

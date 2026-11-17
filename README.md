@@ -70,9 +70,10 @@ It changes no file of Steam: a script is injected into the running UI through th
 
 ### The web UI on a phone
 
-The page has four tabs (bottom bar) and a status strip on top (receiver, TV link, machine on screen, DRY RUN):
+The page has five tabs (bottom bar) and a status strip on top (receiver, TV link, machine on screen, DRY RUN):
 
-- **Remote** — a drawing of the remote (layout from `receiver/web/remote.json`, taken from a photo of the Xiaomi remote). Tap a button to open the binding sheet; press a button on the real remote and it lights up. Buttons with a ring have a binding, dashed ones have a code that is not known yet, a tilde marks a guessed code. The old list editor is still there under *All bindings*.
+- **Remote** — a drawing of the remote (layout from `receiver/web/remote.json`, taken from a photo of the Xiaomi remote). Tap a button to open the binding sheet; press a button on the real remote and it lights up. Buttons with a ring have a binding, dashed ones have a code that is not known yet, a tilde marks a guessed code. The drawing is scaled to fit the free height of the phone screen, so the whole remote is visible without scrolling. The old list editor is still there under *All bindings*.
+- **Apps** — what each button does in every application, one card per application with its name and icon from the `.desktop` file (an exception written as `es-de` is matched to the installed application by id, name or window class), plus a card for the buttons' default actions. Each line starts with the button's glyph, drawn like the buttons in Steam's hints.
 - **Setup** — pairing, connection and the setup wizard.
 - **Monitor** — the live key monitor.
 - **Settings** — status details, dry run, mouse pointer, receiver service.
@@ -105,7 +106,7 @@ The text is matched, case-insensitively and as a substring, against the window c
 
 ### On-screen keyboard
 
-`osk:toggle` (action type *Keyboard* in the editor, "On-screen keyboard" in the *Desktop and media* wizard list) opens a keyboard on the screen, driven by the remote: **arrows move the highlight, OK types the key, Back closes it**, the same button closes it too. While it is open the remote's D-pad goes to the keyboard instead of being injected into the application.
+`osk:toggle` (action type *Keyboard* in the editor, "On-screen keyboard" in the *Desktop and media* wizard list) opens a keyboard on the screen, driven by the remote: **arrows move the highlight, OK types the key, Back deletes the last character, Exit closes it**; the toggle button closes it too. The top line of the keyboard shows these buttons as glyphs. While it is open the remote's D-pad goes to the keyboard instead of being injected into the application.
 
 - The window is an Xwayland dock-type window that never takes the keyboard focus, so the text goes to the application that was in front (checked on the test machine: the focused window is the same before, while and after). The panel is as wide as the screen and sits flush with the bottom edge (no margin below); the keys keep their size (one unit is 0.66/22 of the screen width, so a letter key is 2 units) and stay centred on it.
 - It types with a virtual keyboard of its own, so the machine's layout matters. Italian (`it`) and US (`us`) tables are included; the layout is read from GNOME (`org.gnome.desktop.input-sources`) or forced with `CEC_OSK_LAYOUT=it|us`. The Italian punctuation table was written from the xkb `it` layout and still has to be checked by typing every symbol.

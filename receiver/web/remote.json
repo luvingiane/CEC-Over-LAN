@@ -3,7 +3,7 @@
   "note": "code = the Linux key name the TV's kernel reports for the button (what `adb shell getevent -l` prints). null = not known yet: tap the button in the web UI and use Learn. guess = deduced, not confirmed on the remote.",
   "buttons": {
     "power":   {"label": "⏻", "title": "Power", "code": "KEY_POWER", "guess": true},
-    "mic":     {"label": "🎙", "title": "Voice / Assistant", "code": null},
+    "mic":     {"label": "MIC", "title": "Voice / Assistant", "code": null},
 
     "n1": {"label": "1", "title": "1", "code": "KEY_1", "guess": true},
     "n2": {"label": "2", "title": "2", "code": "KEY_2", "guess": true},
@@ -35,7 +35,7 @@
     "right": {"label": "▶", "title": "Right", "code": "KEY_RIGHT"},
     "ok":    {"label": "OK", "title": "OK / Select", "code": "KEY_SELECT"},
 
-    "settings": {"label": "⚙", "title": "Settings", "code": null},
+    "settings": {"label": "SET", "title": "Settings", "code": null},
     "back":     {"label": "←", "title": "Back", "code": "KEY_BACK"},
     "home":     {"label": "⌂", "title": "Home", "code": "KEY_HOMEPAGE"},
 

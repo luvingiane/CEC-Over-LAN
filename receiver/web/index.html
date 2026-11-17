@@ -71,35 +71,37 @@
           color:var(--muted); background:var(--card); cursor:pointer; }
   .pill.ok { color:var(--ok); } .pill.bad { color:var(--bad); } .pill.dry { color:#d98b00; border-color:#d98b00; }
   .tab { display:none; } .tab.on { display:block; }
-  nav.navbar { position:fixed; left:0; right:0; bottom:0; z-index:6; display:grid; grid-template-columns:repeat(4,1fr);
+  nav.navbar { position:fixed; left:0; right:0; bottom:0; z-index:6; display:grid; grid-template-columns:repeat(5,1fr);
             background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
   nav.navbar button { margin:0; border-radius:0; background:transparent; color:var(--muted); font-size:12px;
                    padding:8px 0 10px; display:flex; flex-direction:column; align-items:center; gap:2px; font-weight:600; }
-  nav.navbar button span { font-size:20px; line-height:1; }
+  nav.navbar button svg { width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
   nav.navbar button.on { color:var(--accent); }
   details.card > summary { cursor:pointer; font-size:15px; font-weight:600; }
   details.card[open] > summary { margin-bottom:10px; }
 
-  #pad { max-width:340px; margin:12px auto 6px; display:flex; flex-direction:column; align-items:center; gap:12px;
-         padding:18px 14px 22px; background:#0d0f12; border-radius:40px; border:1px solid var(--line); }
-  .prow { display:flex; gap:12px; justify-content:center; align-items:center; width:100%; }
+  #padWrap { padding-top:4px; }
+  #pad { width:320px; margin:0 auto; display:flex; flex-direction:column; align-items:center; gap:8px;
+         padding:14px 12px 16px; background:#0d0f12; border-radius:36px; border:1px solid var(--line);
+         transform-origin:top center; }
+  .prow { display:flex; gap:10px; justify-content:center; align-items:center; width:100%; }
   .prow.between { justify-content:space-between; padding:0 8px; }
   .pb { margin:0; padding:0; width:auto; border:1px solid #3a404b; background:#23272e; color:#eceef2; font-size:14px;
         font-weight:700; position:relative; transition:background .12s; }
-  .pb.round { width:56px; height:56px; border-radius:50%; }
-  .pb.sm { width:66px; height:44px; border-radius:22px; font-size:12px; }
-  .pb.pillb { flex:1; height:42px; border-radius:21px; background:#f2f4f8; color:#1b1d21; font-size:13px; }
-  .pb.col { width:44px; height:44px; border-radius:50%; color:#101216; }
+  .pb.round { width:48px; height:48px; border-radius:50%; }
+  .pb.sm { width:64px; height:38px; border-radius:22px; font-size:12px; }
+  .pb.pillb { flex:1; height:36px; border-radius:18px; background:#f2f4f8; color:#1b1d21; font-size:13px; }
+  .pb.col { width:42px; height:36px; border-radius:50%; color:#101216; }
   .pb.col.red { background:#d9534f; } .pb.col.green { background:#3ba55d; }
   .pb.col.yellow { background:#e8c547; } .pb.col.blue { background:#3b8eea; }
-  .rocker { width:62px; border-radius:31px; background:#1a1d22; border:1px solid #3a404b; display:flex; flex-direction:column; overflow:hidden; }
-  .rocker .pb { width:100%; height:54px; border:0; border-radius:0; background:transparent; font-size:22px; }
-  .stack { display:flex; flex-direction:column; gap:14px; }
-  .dpad { position:relative; width:230px; height:230px; border-radius:50%; background:#1a1d22; border:1px solid #3a404b; }
-  .dpad .pb { position:absolute; border:0; background:transparent; width:64px; height:64px; border-radius:50%; font-size:20px; }
-  .dpad .up { top:6px; left:83px; } .dpad .down { bottom:6px; left:83px; }
-  .dpad .left { left:6px; top:83px; } .dpad .right { right:6px; top:83px; }
-  .dpad .okb { left:62px; top:62px; width:106px; height:106px; background:#0d0f12; border:1px solid #3a404b; font-size:18px; }
+  .rocker { width:58px; border-radius:31px; background:#1a1d22; border:1px solid #3a404b; display:flex; flex-direction:column; overflow:hidden; }
+  .rocker .pb { width:100%; height:40px; border:0; border-radius:0; background:transparent; font-size:22px; }
+  .stack { display:flex; flex-direction:column; gap:10px; }
+  .dpad { position:relative; width:200px; height:200px; border-radius:50%; background:#1a1d22; border:1px solid #3a404b; }
+  .dpad .pb { position:absolute; border:0; background:transparent; width:56px; height:56px; border-radius:50%; font-size:20px; }
+  .dpad .up { top:4px; left:72px; } .dpad .down { bottom:4px; left:72px; }
+  .dpad .left { left:4px; top:72px; } .dpad .right { right:4px; top:72px; }
+  .dpad .okb { left:54px; top:54px; width:92px; height:92px; background:#0d0f12; border:1px solid #3a404b; font-size:18px; }
   .pb.bound { box-shadow:0 0 0 2px var(--accent); }
   .pb.unknown { border-style:dashed; opacity:.78; }
   .pb.guess::after { content:'~'; position:absolute; top:0; right:5px; font-size:12px; color:#d98b00; }
@@ -125,6 +127,18 @@
   .applist button { text-align:left; margin:0; border-radius:0; background:transparent; color:var(--fg);
                     border:0; border-bottom:1px solid var(--line); padding:12px; font-size:15px; font-weight:500; }
   .applist button.on { color:var(--accent); font-weight:700; }
+  .gl { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:0 8px;
+        border-radius:999px; font-size:12px; font-weight:700; background:#2a2f38; color:#fff; flex:none;
+        border:1px solid rgba(255,255,255,.35); white-space:nowrap; }
+  .gl.pill { background:#f2f4f8; color:#1b1d21; border-color:var(--line); }
+  .gl.col { color:#101216; } .gl.red { background:#d9534f; } .gl.green { background:#3ba55d; }
+  .gl.yellow { background:#e8c547; } .gl.blue { background:#3b8eea; }
+  .appcard h2 { display:flex; align-items:center; gap:10px; font-size:16px; }
+  .appcard img, .appcard .noicon { width:34px; height:34px; border-radius:8px; flex:none; }
+  .appcard .noicon { font-size:12px; display:flex; align-items:center; justify-content:center; background:var(--accent); color:#fff; font-weight:700; }
+  .sc { display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid var(--line); font-size:14px; }
+  .sc .what { flex:1; min-width:0; word-break:break-word; }
+  .sc small { display:block; color:var(--muted); font-size:12px; }
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:96px; background:rgba(0,0,0,.82); color:#fff;
            padding:9px 16px; border-radius:20px; font-size:13px; z-index:30; max-width:90vw; text-align:center; }
   .sheethead { display:flex; justify-content:space-between; align-items:center; gap:10px; }
@@ -147,10 +161,9 @@
 <main>
 
 <section class="tab on" id="tab-remote">
+  <div id="padWrap"><div id="pad"></div></div>
   <div class="card padcard">
-    <h2>Your remote</h2>
     <div class="hint">Tap a button to choose what it does. Press a button on the real remote and it lights up here.</div>
-    <div id="pad"></div>
     <div class="legend">
       <span><i class="dot b"></i> has a binding</span>
       <span><i class="dot u"></i> code not known: tap it, then <b>Learn</b></span>
@@ -173,6 +186,11 @@
     <div class="msg" id="mMap"></div>
     <datalist id="names"></datalist>
   </details>
+</section>
+
+<section class="tab" id="tab-apps">
+  <div class="hint" style="margin:0 0 10px">What each remote button does in every application. Edit an entry from the Remote tab, in the list editor under Add an exception for an app.</div>
+  <div id="appsBox"></div>
 </section>
 
 <section class="tab" id="tab-setup">
@@ -264,10 +282,11 @@
 </main>
 
 <nav class="navbar" id="bar">
-  <button data-tab="remote" class="on"><span>🎛</span>Remote</button>
-  <button data-tab="setup"><span>🔌</span>Setup</button>
-  <button data-tab="monitor"><span>📡</span>Monitor</button>
-  <button data-tab="settings"><span>⚙</span>Settings</button>
+  <button data-tab="remote" class="on"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="5"/><circle cx="12" cy="9" r="2"/><path d="M12 14v3"/></svg>Remote</button>
+  <button data-tab="apps"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>Apps</button>
+  <button data-tab="setup"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Setup</button>
+  <button data-tab="monitor"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Monitor</button>
+  <button data-tab="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Settings</button>
 </nav>
 <div id="sheetBg" hidden></div>
 <div id="sheet" hidden></div>
@@ -374,15 +393,22 @@ const labelOf = k => LABELS[k] ? `${k} · ${LABELS[k]}` : k;
 const KEYRE = /^KEY_[A-Z0-9_]+$/;
 const URLRE = /^https?:\/\/\S{1,2000}$/;
 let APPS = [];
-async function loadApps() { try { APPS = (await api('/api/apps')).apps || []; } catch (e) {} }
+async function loadApps() { try { APPS = (await api('/api/apps')).apps || []; } catch (e) {} if (typeof renderApps === 'function') renderApps(); }
 const appName = id => { const a = APPS.find(x => x.id === id); return a ? a.name : id; };
 function describe(v) {
   if (!v) return '';
   if (v === 'osk:toggle') return 'On-screen keyboard (open/close)';
   if (v.startsWith('app:')) return 'App: ' + appName(v.slice(4));
   if (v.startsWith('url:')) return 'Website: ' + v.slice(4);
-  return v;
+  return friendlyKeys(v);
 }
+const KEYWORD = { LEFTCTRL: 'Ctrl', RIGHTCTRL: 'Ctrl', LEFTALT: 'Alt', RIGHTALT: 'Alt Gr', LEFTSHIFT: 'Shift', RIGHTSHIFT: 'Shift',
+  LEFTMETA: 'Super', RIGHTMETA: 'Super', ESC: 'Esc', BACKSPACE: 'Backspace', ENTER: 'Enter', SPACE: 'Space', TAB: 'Tab',
+  PAGEUP: 'Page Up', PAGEDOWN: 'Page Down', PLAYPAUSE: 'Play/Pause', NEXTSONG: 'Next track', PREVIOUSSONG: 'Previous track',
+  UP: 'Up', DOWN: 'Down', LEFT: 'Left', RIGHT: 'Right', DELETE: 'Delete', HOME: 'Home', END: 'End', MUTE: 'Mute',
+  VOLUMEUP: 'Volume +', VOLUMEDOWN: 'Volume −' };
+// KEY_LEFTCTRL+KEY_C -> "Ctrl + C"; names it does not know are shown as they are
+const friendlyKeys = v => v.split('+').map(p => { const n = p.trim().replace(/^KEY_/, ''); return KEYWORD[n] || (/^[A-Z0-9]$|^F\d+$/.test(n) ? n : p.trim()); }).join(' + ');
 const typeOf = v => v === 'osk:toggle' ? 'osk' : (v || '').startsWith('app:') ? 'app' : (v || '').startsWith('url:') ? 'url' : 'keys';
 
 // An action editor: type selector + the matching control. Calls onChange(textValue).
@@ -404,7 +430,7 @@ function actionEditor(value, onChange) {
       sel.onchange = () => { value = sel.value ? 'app:' + sel.value : ''; onChange(value); };
       holder.append(sel);
     } else if (t === 'osk') {
-      holder.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open: arrows move, OK types, Back closes.' }));
+      holder.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open: arrows move, OK types, Back deletes, Exit closes.' }));
     } else if (t === 'url') {
       const i = el('input', { type: 'url', placeholder: 'https://…', value: (value || '').startsWith('url:') ? value.slice(4) : '',
         autocomplete: 'off', inputMode: 'url' });
@@ -447,7 +473,7 @@ function renderRows() {
   Object.keys(rows).forEach(key => {
     const r = rows[key];
     const head = el('div', { className: 'rowhead' },
-      el('span', {}, key, el('small', { textContent: LABELS[key] || '' })));
+      el('span', { style: 'display:flex;align-items:center;gap:8px' }, glyph(key), key, el('small', { textContent: LABELS[key] || '' })));
     const del = el('button', { className: 'x', textContent: '×', title: 'Remove' });
     del.onclick = () => { delete rows[key]; renderRows(); };
     head.append(del);
@@ -473,6 +499,7 @@ function renderRows() {
   });
   if (!Object.keys(rows).length) box.append(el('div', { className: 'hint', textContent: 'No keys mapped.' }));
   if (typeof renderPad === 'function') renderPad();
+  if (typeof renderApps === 'function') renderApps();
 }
 function addRow(key, spec) { if (!rows[key]) rows[key] = spec || { tap: '', long: '', hold: '' }; renderRows(); }
 function rowsToPayload(src) {
@@ -728,7 +755,7 @@ function monRender() {
   const rowsEv = M.events.filter(e => !only || e.screen === false).slice(-40).reverse();
   if (!rowsEv.length) { box.append(el('div', { className: 'hint', textContent: 'No events yet.' })); return; }
   rowsEv.forEach(e => box.append(el('div', { className: 'evrow' + (e.screen === false ? ' off' : '') },
-    el('div', { className: 'evhead' }, el('span', { textContent: hhmmss(e.ts) }), el('b', { textContent: e.key }),
+    el('div', { className: 'evhead' }, el('span', { textContent: hhmmss(e.ts) }), el('span', { style: 'display:flex;align-items:center;gap:6px' }, glyph(e.key), el('b', { textContent: e.key })),
       el('span', { textContent: (e.state === 'DOWN' ? '↓ ' : '↑ ') + (e.screen === null ? '?' : e.screen ? 'on screen' : 'OFF SCREEN') })),
     el('div', { className: 'hint', textContent: monWhat(e) }))));
 }
@@ -754,7 +781,7 @@ function showTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + name));
   document.querySelectorAll('#bar button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   try { localStorage.setItem('cecTab', name); } catch (e) {}
-  if (name === 'remote') liveStart(); else liveStop();
+  if (name === 'remote') { liveStart(); fitPad(); } else liveStop();
   window.scrollTo(0, 0);
 }
 document.querySelectorAll('#bar button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -796,7 +823,68 @@ function renderPad() {
   pad.append(row('', pbtn('settings', 'round'), pbtn('back', 'round'), pbtn('home', 'round')));
   pad.append(row('', rocker('volup', 'voldown'), el('div', { className: 'stack' }, pbtn('exit', 'sm'), pbtn('mute', 'sm')), rocker('chup', 'chdown')));
   pad.append(row('', ...['red', 'green', 'yellow', 'blue'].map(i => pbtn(i, 'col ' + i))));
+  fitPad();
 }
+
+// ---------- button glyphs (as in Steam's hints) and the per-app shortcut view ----------
+const GLYPH_KIND = { red: 'col red', green: 'col green', yellow: 'col yellow', blue: 'col blue' };
+['exit', 'mute', 'info', 'ttx', 'epg', 'audio', 'source', 'netflix', 'prime', 'youtube', 'tvplus', 'star', 'livetv']
+  .forEach(i => { GLYPH_KIND[i] = 'pill'; });
+function glyph(code) {
+  const id = codeToButton()[code], b = id && REMOTE.buttons[id];
+  if (!b) return el('span', { className: 'gl pill', textContent: (LABELS[code] || String(code).replace('KEY_', '')) });
+  return el('span', { className: 'gl ' + (GLYPH_KIND[id] || ''), textContent: b.label, title: b.title });
+}
+const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function findApp(match) {
+  const m = norm(match); if (m.length < 3) return null;
+  let best = null, bs = 0, bd = 1e9;
+  APPS.forEach(a => {
+    // id, name and window class only: the Exec line would match anything launched through a wrapper
+    const f = [a.id.replace(/\.desktop$/, ''), a.name, a.wm].map(norm).filter(x => x.length >= 3);
+    const s = f.some(x => x === m) ? 2 : f.some(x => x.includes(m) || m.includes(x)) ? 1 : 0;
+    const d = Math.min(...f.map(x => Math.abs(x.length - m.length)), 1e9);
+    if (s > bs || (s === bs && s > 0 && d < bd)) { best = a; bs = s; bd = d; }
+  });
+  return best;
+}
+const titleCase = s => (s || '').replace(/[-_.]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+function appCard(name, icon, lines, note, badge) {
+  const mark = icon ? el('img', { src: icon, alt: '' }) : el('span', { className: 'noicon', textContent: badge || (name[0] || '?').toUpperCase() });
+  const card = el('div', { className: 'card appcard' }, el('h2', {}, mark, el('span', { textContent: name })));
+  if (note) card.append(el('div', { className: 'hint', textContent: note }));
+  lines.forEach(([key, entry]) => {
+    const what = el('div', { className: 'what' }, el('span', { textContent: describe(entry.tap) || 'does nothing' }));
+    if (entry.long) what.append(el('small', { textContent: 'hold: ' + describe(entry.long) }));
+    card.append(el('div', { className: 'sc' }, glyph(key), what));
+  });
+  return card;
+}
+function renderApps() {
+  const box = $('appsBox'); if (!box) return; box.textContent = '';
+  const groups = {};
+  Object.keys(rows).forEach(key => (rows[key].apps || []).forEach(ex => {
+    if (!ex.match) return;
+    const app = findApp(ex.match), gid = app ? app.id : 'm:' + ex.match.toLowerCase();
+    const g = groups[gid] = groups[gid] || { name: app ? app.name : titleCase(ex.match), icon: app ? app.icon : '', lines: [] };
+    g.lines.push([key, ex]);
+  }));
+  Object.values(groups).sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(g => box.append(appCard(g.name, g.icon, g.lines)));
+  const base = Object.keys(rows).filter(k => rows[k].tap || rows[k].long).map(k => [k, rows[k]]);
+  box.append(appCard('Everywhere else', '', base, 'Used when the focused application has no entry of its own.', 'All'));
+}
+// the whole remote has to be visible without scrolling: scale the drawing down to the free space
+function fitPad() {
+  const wrap = $('padWrap'), pad = $('pad');
+  if (!wrap || !pad || !$('tab-remote').classList.contains('on')) return;
+  pad.style.transform = 'none'; wrap.style.height = '';
+  const h = pad.offsetHeight, w = pad.offsetWidth; if (!h) return;
+  const free = window.innerHeight - document.querySelector('header.top').offsetHeight - $('bar').offsetHeight - 40;
+  const s = Math.min(1, free / h, (wrap.clientWidth || w) / w);
+  pad.style.transform = `scale(${s})`; wrap.style.height = Math.ceil(h * s + 4) + 'px';
+}
+window.addEventListener('resize', fitPad); window.addEventListener('orientationchange', fitPad);
 
 // ---------- real key presses: light the drawn button; learn a code ----------
 const L = { timer: null, after: 0 };
@@ -858,8 +946,8 @@ const KEYPAGES = {
         ['KEY_DELETE', 'Del'], ['KEY_INSERT', 'Ins'], ['KEY_HOME', 'Home'], ['KEY_END', 'End'], ['KEY_PAGEUP', 'PgUp'],
         ['KEY_PAGEDOWN', 'PgDn'], ['KEY_UP', '↑'], ['KEY_DOWN', '↓'], ['KEY_LEFT', '←'], ['KEY_RIGHT', '→']],
   F: Array.from({ length: 12 }, (_, i) => ['KEY_F' + (i + 1), 'F' + (i + 1)]),
-  Media: [['KEY_PLAYPAUSE', '⏯'], ['KEY_NEXTSONG', '⏭'], ['KEY_PREVIOUSSONG', '⏮'], ['KEY_FASTFORWARD', '⏩'],
-          ['KEY_REWIND', '⏪'], ['KEY_MUTE', '🔇'], ['KEY_VOLUMEUP', '🔊'], ['KEY_VOLUMEDOWN', '🔉'],
+  Media: [['KEY_PLAYPAUSE', 'Play/Pause'], ['KEY_NEXTSONG', 'Next'], ['KEY_PREVIOUSSONG', 'Prev'], ['KEY_FASTFORWARD', 'FF'],
+          ['KEY_REWIND', 'Rew'], ['KEY_MUTE', 'Mute'], ['KEY_VOLUMEUP', 'Vol +'], ['KEY_VOLUMEDOWN', 'Vol −'],
           ['KEY_HOMEPAGE', 'Home pg'], ['KEY_MENU', 'Menu']],
 };
 const URL_PRESETS = [['YouTube', 'https://www.youtube.com/'], ['YouTube TV page', 'https://www.youtube.com/tv'],
@@ -927,7 +1015,7 @@ function renderSheet() {
   if (type === 'keys') sheetKeys(s, val, setVal);
   else if (type === 'app') sheetApps(s, val, setVal);
   else if (type === 'url') sheetUrl(s, val, setVal);
-  else if (type === 'osk') s.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open the arrows move, OK types, Back closes.' }));
+  else if (type === 'osk') s.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open the arrows move, OK types, Back deletes, Exit closes.' }));
   else s.append(el('div', { className: 'hint', textContent: SH.slot === 'tap' ? 'This button does nothing on the machine when tapped.' : 'No long-press action.' }));
 
   const out = el('div', { className: 'msg' });

@@ -6,8 +6,9 @@ sends it the remote's D-pad over a local socket instead of injecting arrow keys:
 
     up / down / left / right   move the highlighted key
     ok                         type the highlighted key
-    back                       close the keyboard
-    close                      close the keyboard (same toggle button pressed again)
+    backspace                  delete the last character (the remote's Back button)
+    close                      close the keyboard (the remote's Exit button, or the toggle button
+                               pressed again)
 
 The window never takes the keyboard focus (it is shown by Xwayland as a dock-type window with
 "input = false"), so the text goes to the application that was in front. Characters are typed
@@ -220,11 +221,38 @@ button, button:backdrop { font-size: 28px; min-height: 62px; border-radius: 10px
          color: #f2f4f8; border: 2px solid #3a404b; padding: 0; text-shadow: none; }
 button.mod, button.mod:backdrop { background: #343a45; }
 button.sel, button.sel:backdrop { background: #3d7bff; color: #ffffff; border-color: #a9c3ff; }
+label.glyph, label.glyph:backdrop { color: #101216; background: #f2f4f8; font-weight: bold; font-size: 16px;
+         padding: 3px 12px; border: 1px solid #3a404b; }
+label.g-round, label.g-round:backdrop { background: #2a2f38; color: #ffffff; border-radius: 999px; padding: 3px 12px; }
+label.g-pill, label.g-pill:backdrop { border-radius: 999px; }
 button label, button:backdrop label { color: #f2f4f8; opacity: 1; text-shadow: none; }
 button.sel label, button.sel:backdrop label { color: #ffffff; font-weight: bold; }
 """
 # The window never has the focus, so GTK would draw everything with the dimmed ":backdrop" look;
 # the rules above give both states the same colours.
+
+
+# the remote's buttons as drawn in the web UI and in Steam: (text, css class, what it does)
+HINTS = [("OK", "g-round", "types"), ("\u25c0 \u25b2 \u25bc \u25b6", "g-pill", "move"),
+         ("\u2190", "g-round", "deletes"), ("EXIT", "g-pill", "closes")]
+
+
+def hint_bar(Gtk, layout):
+    """One line under the top edge: each remote button as a small glyph followed by its job."""
+    bar = Gtk.Box(spacing=10)
+    bar.set_halign(Gtk.Align.CENTER)
+    for glyph, css, job in HINTS:
+        g = Gtk.Label(label=glyph)
+        g.get_style_context().add_class("glyph")
+        g.get_style_context().add_class(css)
+        bar.pack_start(g, False, False, 0)
+        text = Gtk.Label(label=job)
+        text.get_style_context().add_class("title")
+        bar.pack_start(text, False, False, 14)
+    tail = Gtk.Label(label=f"layout: {layout}")
+    tail.get_style_context().add_class("title")
+    bar.pack_start(tail, False, False, 0)
+    return bar
 
 
 def main():
@@ -268,9 +296,7 @@ def main():
     outer.set_margin_end(16)
     outer.set_margin_top(12)
     outer.set_margin_bottom(0)        # flush with the bottom edge of the screen
-    title = Gtk.Label(label=f"OK types  ·  arrows move  ·  Back closes  ·  layout: {layout}")
-    title.get_style_context().add_class("title")
-    outer.pack_start(title, False, False, 0)
+    outer.pack_start(hint_bar(Gtk, layout), False, False, 0)
     board = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
     outer.pack_start(board, False, False, 0)
     win.add(outer)
@@ -319,7 +345,9 @@ def main():
                 render()
             else:
                 highlight()
-        elif msg in ("back", "close"):
+        elif msg == "backspace":
+            typist.do({"type": "backspace"})
+        elif msg == "close":
             Gtk.main_quit()
         return True
 

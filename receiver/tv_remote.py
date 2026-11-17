@@ -484,7 +484,7 @@ class Pointer:
 OSK_SCRIPT = Path(__file__).resolve().with_name("tv_osk.py")
 OSK_SOCKET = "\0cec-over-lan-osk-%d" % os.getuid()  # abstract socket, same name as in tv_osk.py
 OSK_NAV = {"KEY_UP": "up", "KEY_DOWN": "down", "KEY_LEFT": "left", "KEY_RIGHT": "right",
-           "KEY_SELECT": "ok", "KEY_BACK": "back"}
+           "KEY_SELECT": "ok", "KEY_BACK": "backspace", "KEY_EXIT": "close"}
 
 
 class OskController:

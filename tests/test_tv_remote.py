@@ -526,9 +526,10 @@ class OskControllerTests(unittest.TestCase):
         self.assertEqual(c.toggle(), "opening")
         self.assertEqual(c.route("KEY_UP"), "osk:up")
         self.assertEqual(c.route("KEY_SELECT"), "osk:ok")
-        self.assertEqual(c.route("KEY_BACK"), "osk:back")
+        self.assertEqual(c.route("KEY_BACK"), "osk:backspace")   # Back deletes
+        self.assertEqual(c.route("KEY_EXIT"), "osk:close")       # Exit leaves the keyboard
         self.assertIsNone(c.route("KEY_PLAYPAUSE"))          # other buttons keep their normal mapping
-        self.assertEqual(sent, ["up", "ok", "back"])
+        self.assertEqual(sent, ["up", "ok", "backspace", "close"])
         self.assertEqual(c.toggle(), "closing")
         self.assertEqual(sent[-1], "close")
 

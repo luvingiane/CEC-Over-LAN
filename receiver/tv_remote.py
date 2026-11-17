@@ -130,13 +130,22 @@ def combo_hint(text):
     return "invalid"
 
 
+MOUSE_BUTTONS = {"left": "BTN_LEFT", "right": "BTN_RIGHT", "middle": "BTN_MIDDLE"}
+MOUSE_MOVES = {"move-up": (0, -1), "move-down": (0, 1), "move-left": (-1, 0), "move-right": (1, 0)}
+MOUSE_SCROLL = {"scroll-up": 1, "scroll-down": -1}
+MOUSE_NAMES = sorted([*MOUSE_BUTTONS, *MOUSE_MOVES, *MOUSE_SCROLL])
+
+
 def parse_action(text):
-    """Text -> {"type": "keys"|"app"|"url", ...} or None when invalid."""
+    """Text -> {"type": "keys"|"app"|"url"|"osk"|"mouse", ...} or None when invalid."""
     if not isinstance(text, str):
         return None
     text = text.strip()
     if text == "osk:toggle":
         return {"type": "osk"}
+    if text.startswith("mouse:"):
+        name = text[6:].strip()
+        return {"type": "mouse", "name": name} if name in MOUSE_NAMES else None
     if text.startswith("app:"):
         app = text[4:].strip()
         return {"type": "app", "id": app} if DESKTOP_ID.match(app) else None
@@ -156,12 +165,16 @@ def action_hint(text):
         return "a website is written url:http(s)://…"
     if t.startswith("osk:"):
         return "the only keyboard action is osk:toggle"
+    if t.startswith("mouse:"):
+        return "a mouse action is mouse:<" + "|".join(MOUSE_NAMES) + ">"
     return combo_hint(t)
 
 
 def action_to_text(action):
     if action["type"] == "osk":
         return "osk:toggle"
+    if action["type"] == "mouse":
+        return "mouse:" + action["name"]
     if action["type"] == "keys":
         return "+".join(action["keys"])
     if action["type"] == "app":
@@ -446,6 +459,95 @@ def make_pointer_device():
         return None
 
 
+class Mouse:
+    """Mouse actions on the virtual mouse (the same device that hides the pointer).
+
+    A button is held while the remote button is held (a long press drags); movement and scrolling
+    repeat while the remote button is held, movement getting faster the longer it is held."""
+
+    TICK_S, SCROLL_TICK_S = 0.03, 0.12
+    START, TOP, GAIN = 6, 40, 1.12   # pixels per tick: first step, fastest, growth per tick
+
+    def __init__(self, out, ui):
+        self.out, self.ui = out, ui
+        self.running = {}   # remote key -> (stop Event, thread)
+        self.buttons = {}   # remote key -> BTN_* held down
+
+    def _dry(self):
+        return self.out.is_dry()
+
+    def _move(self, dx, dy):
+        if dx:
+            self.ui.write(e.EV_REL, e.REL_X, dx)
+        if dy:
+            self.ui.write(e.EV_REL, e.REL_Y, dy)
+        self.ui.syn()
+
+    def _scroll(self, direction):
+        self.ui.write(e.EV_REL, e.REL_WHEEL, direction)
+        self.ui.syn()
+
+    def click(self, name):
+        """One-shot: a click, one movement step or one scroll notch."""
+        if self._dry() or self.ui is None:
+            print(f"[mouse] would do {name}", flush=True)
+            return
+        if name in MOUSE_BUTTONS:
+            btn = getattr(e, MOUSE_BUTTONS[name])
+            self.ui.write(e.EV_KEY, btn, 1)
+            self.ui.syn()
+            self.ui.write(e.EV_KEY, btn, 0)
+            self.ui.syn()
+        elif name in MOUSE_MOVES:
+            dx, dy = MOUSE_MOVES[name]
+            self._move(dx * self.START * 3, dy * self.START * 3)
+        else:
+            self._scroll(MOUSE_SCROLL[name])
+
+    def start(self, key, name):
+        """The remote button went down."""
+        if self._dry() or self.ui is None:
+            print(f"[mouse] would start {name}", flush=True)
+            return
+        self.stop(key)
+        if name in MOUSE_BUTTONS:
+            btn = getattr(e, MOUSE_BUTTONS[name])
+            self.ui.write(e.EV_KEY, btn, 1)
+            self.ui.syn()
+            self.buttons[key] = btn
+            return
+        stop = threading.Event()
+        th = threading.Thread(target=self._repeat, args=(name, stop), daemon=True)
+        self.running[key] = (stop, th)
+        th.start()
+
+    def _repeat(self, name, stop):
+        step = float(self.START)
+        while not stop.is_set():
+            if name in MOUSE_MOVES:
+                dx, dy = MOUSE_MOVES[name]
+                self._move(dx * int(step), dy * int(step))
+                step = min(self.TOP, step * self.GAIN)
+                stop.wait(self.TICK_S)
+            else:
+                self._scroll(MOUSE_SCROLL[name])
+                stop.wait(self.SCROLL_TICK_S)
+
+    def stop(self, key):
+        """The remote button went up (or the receiver is shutting down)."""
+        running = self.running.pop(key, None)
+        if running:
+            running[0].set()
+        btn = self.buttons.pop(key, None)
+        if btn is not None and self.ui is not None:
+            self.ui.write(e.EV_KEY, btn, 0)
+            self.ui.syn()
+
+    def stop_all(self):
+        for key in list(self.running) + list(self.buttons):
+            self.stop(key)
+
+
 CORNERS = {"top-right": (1, -1), "bottom-right": (1, 1), "top-left": (-1, -1), "bottom-left": (-1, 1)}
 
 
@@ -613,12 +715,14 @@ def focus_label(f):
 class Router:
     """Turns remote key events into injected keys / launches following the keymap."""
 
-    def __init__(self, keymap, out, launcher=None, pointer=None, focus=None, osk=None):
+    def __init__(self, keymap, out, launcher=None, pointer=None, focus=None, osk=None, mouse=None):
         self.keymap = keymap
         self.out = out
         self.pointer = pointer
         self.focus = focus
         self.osk = osk
+        self.mouse = mouse
+        self.mouse_keys = set()  # remote keys whose mouse action is running
         self.active_entry = {}  # remote key -> the entry chosen at DOWN (used again at UP)
         self.launcher = launcher or (lambda action: launch(action, out.is_dry()))
         self.lock = threading.RLock()
@@ -645,6 +749,10 @@ class Router:
         """One-shot execution of an action (click for keys, launch for app/url)."""
         if action["type"] == "keys":
             self._click(action["keys"])
+            return
+        if action["type"] == "mouse":
+            if self.mouse is not None:
+                self.mouse.click(action["name"])
             return
         if action["type"] == "osk":
             if self.osk is None:
@@ -691,7 +799,8 @@ class Router:
                 if active and self.focus is not None:
                     detail += f" app={focus_label(focused)}"
                 if active and self.pointer is not None:
-                    detail += f" pointer={self.pointer.hide()}"
+                    # a mouse action would be undone by sending the pointer to the corner
+                    detail += " pointer=mouse" if "mouse:" in decision else f" pointer={self.pointer.hide()}"
             print(f"[seen] {key} {state} screen={'yes' if active else 'no'} {detail}", flush=True)
 
     def _down(self, key):
@@ -720,6 +829,9 @@ class Router:
                     self.out.key(n, 1)
                 self.holds[key] = entry["tap"]["keys"]
                 self._after_keys(entry["tap"]["keys"])
+            elif entry["tap"]["type"] == "mouse" and self.mouse is not None:
+                self.mouse.start(key, entry["tap"]["name"])
+                self.mouse_keys.add(key)
             else:
                 self._perform(entry["tap"])
             return "tap:" + brief(entry["tap"]) + suffix
@@ -757,6 +869,9 @@ class Router:
         if names:
             for n in reversed(names):
                 self.out.key(n, 0)
+        if key in self.mouse_keys:
+            self.mouse_keys.discard(key)
+            self.mouse.stop(key)
         return result
 
     def release_all(self):
@@ -769,6 +884,9 @@ class Router:
                     self.out.key(n, 0)
             self.holds.clear()
             self.fired.clear()
+            if self.mouse is not None:
+                self.mouse.stop_all()
+                self.mouse_keys.clear()
 
 
 class Gate:
@@ -819,10 +937,11 @@ def run(args):
     keymap = Keymap(args.keymap, args.back_key)
     out = Out(args.dry_run, DryFlag(args.dryrun_file))
     pointer = None
+    mouse_dev = None if args.dry_run else make_pointer_device()
     if not args.no_hide_pointer:
-        pointer = Pointer(out, KeepPointerFlag(args.pointer_file),
-                          None if args.dry_run else make_pointer_device(), args.pointer_corner)
-    router = Router(keymap, out, pointer=pointer, focus=Focus(), osk=OskController())
+        pointer = Pointer(out, KeepPointerFlag(args.pointer_file), mouse_dev, args.pointer_corner)
+    router = Router(keymap, out, pointer=pointer, focus=Focus(), osk=OskController(),
+                    mouse=Mouse(out, mouse_dev))
     gate = Gate(args, router)
     current = {"proc": None}
 

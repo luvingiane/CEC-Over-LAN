@@ -398,6 +398,7 @@ const appName = id => { const a = APPS.find(x => x.id === id); return a ? a.name
 function describe(v) {
   if (!v) return '';
   if (v === 'osk:toggle') return 'On-screen keyboard (open/close)';
+  if (v.startsWith('mouse:')) return 'Mouse: ' + (MOUSE.find(m => m[0] === v.slice(6)) || [0, v.slice(6)])[1].toLowerCase();
   if (v.startsWith('app:')) return 'App: ' + appName(v.slice(4));
   if (v.startsWith('url:')) return 'Website: ' + v.slice(4);
   return friendlyKeys(v);
@@ -409,13 +410,17 @@ const KEYWORD = { LEFTCTRL: 'Ctrl', RIGHTCTRL: 'Ctrl', LEFTALT: 'Alt', RIGHTALT:
   VOLUMEUP: 'Volume +', VOLUMEDOWN: 'Volume −' };
 // KEY_LEFTCTRL+KEY_C -> "Ctrl + C"; names it does not know are shown as they are
 const friendlyKeys = v => v.split('+').map(p => { const n = p.trim().replace(/^KEY_/, ''); return KEYWORD[n] || (/^[A-Z0-9]$|^F\d+$/.test(n) ? n : p.trim()); }).join(' + ');
-const typeOf = v => v === 'osk:toggle' ? 'osk' : (v || '').startsWith('app:') ? 'app' : (v || '').startsWith('url:') ? 'url' : 'keys';
+const MOUSE = [['left', 'Left click'], ['right', 'Right click'], ['middle', 'Middle click'],
+  ['move-up', 'Move up'], ['move-down', 'Move down'], ['move-left', 'Move left'], ['move-right', 'Move right'],
+  ['scroll-up', 'Scroll up'], ['scroll-down', 'Scroll down']];
+const MOUSE_HELP = 'Held button: a click button stays pressed (drag), movement and scrolling repeat while the remote button is held, and movement speeds up.';
+const typeOf = v => v === 'osk:toggle' ? 'osk' : (v || '').startsWith('mouse:') ? 'mouse' : (v || '').startsWith('app:') ? 'app' : (v || '').startsWith('url:') ? 'url' : 'keys';
 
 // An action editor: type selector + the matching control. Calls onChange(textValue).
 function actionEditor(value, onChange) {
   const holder = el('div');
   const type = el('select');
-  [['keys', 'Keys'], ['app', 'App'], ['url', 'Website'], ['osk', 'Keyboard']].forEach(([v, t]) => type.append(el('option', { value: v, textContent: t })));
+  [['keys', 'Keys'], ['app', 'App'], ['url', 'Website'], ['osk', 'Keyboard'], ['mouse', 'Mouse']].forEach(([v, t]) => type.append(el('option', { value: v, textContent: t })));
   type.value = typeOf(value);
   function control() {
     holder.textContent = '';
@@ -428,6 +433,13 @@ function actionEditor(value, onChange) {
       list.forEach(a => sel.append(el('option', { value: a.id, textContent: a.name })));
       sel.value = cur;
       sel.onchange = () => { value = sel.value ? 'app:' + sel.value : ''; onChange(value); };
+      holder.append(sel);
+    } else if (t === 'mouse') {
+      const sel = el('select');
+      sel.append(el('option', { value: '', textContent: '— choose a mouse action —' }));
+      MOUSE.forEach(([id, name]) => sel.append(el('option', { value: id, textContent: name })));
+      sel.value = (value || '').startsWith('mouse:') ? value.slice(6) : '';
+      sel.onchange = () => { value = sel.value ? 'mouse:' + sel.value : ''; onChange(value); };
       holder.append(sel);
     } else if (t === 'osk') {
       holder.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open: arrows move, OK types, Back deletes, Exit closes.' }));
@@ -1008,13 +1020,14 @@ function renderSheet() {
   const val = entry[SH.slot] || '';
   const type = SH.type || (val ? typeOf(val) : 'none');
   const setVal = v => { entry[SH.slot] = v; };
-  s.append(seg([['keys', 'Keys'], ['app', 'App'], ['url', 'Website'], ['osk', 'Keyboard'], ['none', 'Nothing']], type, t => {
+  s.append(seg([['keys', 'Keys'], ['app', 'App'], ['url', 'Website'], ['osk', 'Keyboard'], ['mouse', 'Mouse'], ['none', 'Nothing']], type, t => {
     SH.type = t; if (t === 'osk') setVal('osk:toggle'); else if (t === 'none') setVal(''); else if (!val || typeOf(val) !== t) setVal('');
     renderSheet(); }));
 
   if (type === 'keys') sheetKeys(s, val, setVal);
   else if (type === 'app') sheetApps(s, val, setVal);
   else if (type === 'url') sheetUrl(s, val, setVal);
+  else if (type === 'mouse') sheetMouse(s, val, setVal);
   else if (type === 'osk') s.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open the arrows move, OK types, Back deletes, Exit closes.' }));
   else s.append(el('div', { className: 'hint', textContent: SH.slot === 'tap' ? 'This button does nothing on the machine when tapped.' : 'No long-press action.' }));
 
@@ -1031,6 +1044,17 @@ async function addScope() {
 function startScope(name) {
   if (!SH.draft.apps.some(a => a.match === name)) SH.draft.apps.push({ match: name, tap: '', long: '', hold: '' });
   SH.scope = name; SH.suggest = null; SH.type = null; renderSheet();
+}
+
+function sheetMouse(s, val, setVal) {
+  const cur = val.startsWith('mouse:') ? val.slice(6) : '';
+  const keys = el('div', { className: 'keys' });
+  MOUSE.forEach(([id, name]) => {
+    const b = el('button', { textContent: name, className: id === cur ? 'on' : '' });
+    b.onclick = () => { setVal('mouse:' + id); renderSheet(); };
+    keys.append(b);
+  });
+  s.append(keys, el('div', { className: 'hint', textContent: MOUSE_HELP }));
 }
 
 function sheetKeys(s, val, setVal) {

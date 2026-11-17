@@ -874,5 +874,83 @@ class Reload(unittest.TestCase):
         self.assertIn("KEY_8", router.keymap.entries)
 
 
+class FakeMouseOut(FakeOut):
+    def is_dry(self):
+        return False
+
+
+@unittest.skipIf(core.e is None, "python-evdev not installed")
+class MouseActions(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(core.parse_action("mouse:left"), {"type": "mouse", "name": "left"})
+        self.assertEqual(core.action_to_text(core.parse_action("mouse:scroll-down")), "mouse:scroll-down")
+        self.assertIsNone(core.parse_action("mouse:teleport"))
+        self.assertIn("mouse:", core.action_hint("mouse:teleport"))
+
+    def test_click_scroll_and_step(self):
+        ui = FakePointerUI()
+        m = core.Mouse(FakeMouseOut(), ui)
+        m.click("right")
+        self.assertEqual(ui.events, [(core.e.EV_KEY, core.e.BTN_RIGHT, 1), "syn",
+                                     (core.e.EV_KEY, core.e.BTN_RIGHT, 0), "syn"])
+        ui.events.clear()
+        m.click("scroll-up")
+        self.assertEqual(ui.events[0], (core.e.EV_REL, core.e.REL_WHEEL, 1))
+        ui.events.clear()
+        m.click("move-left")
+        self.assertEqual(ui.events[0], (core.e.EV_REL, core.e.REL_X, -18))
+
+    def test_button_is_held_until_release(self):
+        ui = FakePointerUI()
+        m = core.Mouse(FakeMouseOut(), ui)
+        m.start("KEY_OK", "left")
+        self.assertEqual(ui.events[0], (core.e.EV_KEY, core.e.BTN_LEFT, 1))
+        m.stop("KEY_OK")
+        self.assertIn((core.e.EV_KEY, core.e.BTN_LEFT, 0), ui.events)
+
+    def test_movement_repeats_while_held_and_stops(self):
+        ui = FakePointerUI()
+        m = core.Mouse(FakeMouseOut(), ui)
+        m.start("KEY_UP", "move-up")
+        time.sleep(0.2)
+        m.stop("KEY_UP")
+        moves = [x for x in ui.events if x != "syn" and x[1] == core.e.REL_Y]
+        self.assertGreater(len(moves), 3)
+        self.assertTrue(all(x[2] < 0 for x in moves))
+        self.assertLess(moves[0][2] * -1, moves[-1][2] * -1 + 1)   # it speeds up
+        time.sleep(0.1)
+        count = len(ui.events)
+        time.sleep(0.15)
+        self.assertEqual(len(ui.events), count)                    # nothing after the release
+
+    def test_dry_run_moves_nothing(self):
+        class Dry(FakeOut):
+            def is_dry(self):
+                return True
+        ui = FakePointerUI()
+        m = core.Mouse(Dry(), ui)
+        m.click("left")
+        m.start("KEY_OK", "left")
+        self.assertEqual(ui.events, [])
+
+    def test_router_drives_the_mouse_and_keeps_the_pointer(self):
+        router, _, _ = make_router({"KEY_SELECT": {"tap": "mouse:left"}})
+        ui = FakePointerUI()
+        router.out = FakeMouseOut()
+        router.mouse = core.Mouse(router.out, ui)
+        class Spy:
+            calls = 0
+            def hide(self):
+                Spy.calls += 1
+                return "moved"
+        router.pointer = Spy()
+        lines = seen_lines(router, ("KEY_SELECT", "DOWN", True), ("KEY_SELECT", "UP", True))
+        self.assertIn("decision=tap:mouse:left", lines[0])
+        self.assertIn("pointer=mouse", lines[0])
+        self.assertEqual(Spy.calls, 0)
+        self.assertEqual([x for x in ui.events if x != "syn"],
+                         [(core.e.EV_KEY, core.e.BTN_LEFT, 1), (core.e.EV_KEY, core.e.BTN_LEFT, 0)])
+
+
 if __name__ == "__main__":
     unittest.main()

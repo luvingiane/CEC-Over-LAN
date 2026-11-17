@@ -6,23 +6,110 @@
       "default": true,
       "source": "ES-DE USERGUIDE.md, section \"Default keyboard mappings\" (lines 646-707)",
       "actions": [
-        {"id": "up", "label": "Up", "help": "Navigate up in lists, grids and menus", "target": "KEY_UP"},
-        {"id": "down", "label": "Down", "help": "Navigate down in lists, grids and menus", "target": "KEY_DOWN"},
-        {"id": "left", "label": "Left", "help": "Navigate left between systems and games", "target": "KEY_LEFT"},
-        {"id": "right", "label": "Right", "help": "Navigate right between systems and games", "target": "KEY_RIGHT"},
-        {"id": "a", "label": "A: select / launch game", "help": "Open gamelists, launch games, confirm in menus (Enter)", "target": "KEY_ENTER"},
-        {"id": "b", "label": "B: back", "help": "Go back. The guide only says \"Back key\"; Backspace is our assumption", "target": "KEY_BACKSPACE"},
-        {"id": "start", "label": "Start: main menu", "help": "Open and close the main menu (Escape)", "target": "KEY_ESC"},
-        {"id": "options", "label": "Back button: gamelist options", "help": "Open and close the gamelist options menu (F1)", "target": "KEY_F1"},
-        {"id": "lshoulder", "label": "Left shoulder: page up", "help": "Jump 10 games in gamelists, 6 entries in menus (Page Up)", "target": "KEY_PAGEUP"},
-        {"id": "rshoulder", "label": "Right shoulder: page down", "help": "Jump 10 games in gamelists, 6 entries in menus (Page Down)", "target": "KEY_PAGEDOWN"},
-        {"id": "ltrigger", "label": "Left trigger: first entry", "help": "Jump to the first entry (Home)", "target": "KEY_HOME"},
-        {"id": "rtrigger", "label": "Right trigger: last entry", "help": "Jump to the last entry (End)", "target": "KEY_END"},
-        {"id": "x", "label": "X: media viewer / screensaver", "help": "Media viewer in a gamelist, screensaver in the systems view (Delete)", "target": "KEY_DELETE"},
-        {"id": "y", "label": "Y: favourite", "help": "Mark a game as favourite, if \"Enable toggle favorites button\" is on (Insert)", "target": "KEY_INSERT"},
-        {"id": "random_l", "label": "Random game or system (left stick click)", "help": "Only if the \"Random entry button\" option is configured (F2)", "target": "KEY_F2"},
-        {"id": "random_r", "label": "Random game or system (right stick click)", "help": "Only if the \"Random entry button\" option is configured (F3)", "target": "KEY_F3"},
-        {"id": "quit", "label": "Quit ES-DE (hold)", "help": "Alt+F4 closes the application; a long press avoids accidents", "target": "KEY_LEFTALT+KEY_F4", "slot": "long", "hold": 3}
+        {
+          "id": "up",
+          "label": "Up",
+          "help": "Navigate up in lists, grids and menus",
+          "target": "KEY_UP"
+        },
+        {
+          "id": "down",
+          "label": "Down",
+          "help": "Navigate down in lists, grids and menus",
+          "target": "KEY_DOWN"
+        },
+        {
+          "id": "left",
+          "label": "Left",
+          "help": "Navigate left between systems and games",
+          "target": "KEY_LEFT"
+        },
+        {
+          "id": "right",
+          "label": "Right",
+          "help": "Navigate right between systems and games",
+          "target": "KEY_RIGHT"
+        },
+        {
+          "id": "a",
+          "label": "A: select / launch game",
+          "help": "Open gamelists, launch games, confirm in menus (Enter)",
+          "target": "KEY_ENTER"
+        },
+        {
+          "id": "b",
+          "label": "B: back",
+          "help": "Go back. The guide only says \"Back key\"; Backspace is our assumption",
+          "target": "KEY_BACKSPACE"
+        },
+        {
+          "id": "start",
+          "label": "Start: main menu",
+          "help": "Open and close the main menu (Escape)",
+          "target": "KEY_ESC"
+        },
+        {
+          "id": "options",
+          "label": "Back button: gamelist options",
+          "help": "Open and close the gamelist options menu (F1)",
+          "target": "KEY_F1"
+        },
+        {
+          "id": "lshoulder",
+          "label": "Left shoulder: page up",
+          "help": "Jump 10 games in gamelists, 6 entries in menus (Page Up)",
+          "target": "KEY_PAGEUP"
+        },
+        {
+          "id": "rshoulder",
+          "label": "Right shoulder: page down",
+          "help": "Jump 10 games in gamelists, 6 entries in menus (Page Down)",
+          "target": "KEY_PAGEDOWN"
+        },
+        {
+          "id": "ltrigger",
+          "label": "Left trigger: first entry",
+          "help": "Jump to the first entry (Home)",
+          "target": "KEY_HOME"
+        },
+        {
+          "id": "rtrigger",
+          "label": "Right trigger: last entry",
+          "help": "Jump to the last entry (End)",
+          "target": "KEY_END"
+        },
+        {
+          "id": "x",
+          "label": "X: media viewer / screensaver",
+          "help": "Media viewer in a gamelist, screensaver in the systems view (Delete)",
+          "target": "KEY_DELETE"
+        },
+        {
+          "id": "y",
+          "label": "Y: favourite",
+          "help": "Mark a game as favourite, if \"Enable toggle favorites button\" is on (Insert)",
+          "target": "KEY_INSERT"
+        },
+        {
+          "id": "random_l",
+          "label": "Random game or system (left stick click)",
+          "help": "Only if the \"Random entry button\" option is configured (F2)",
+          "target": "KEY_F2"
+        },
+        {
+          "id": "random_r",
+          "label": "Random game or system (right stick click)",
+          "help": "Only if the \"Random entry button\" option is configured (F3)",
+          "target": "KEY_F3"
+        },
+        {
+          "id": "quit",
+          "label": "Quit ES-DE (hold)",
+          "help": "Alt+F4 closes the application; a long press avoids accidents",
+          "target": "KEY_LEFTALT+KEY_F4",
+          "slot": "long",
+          "hold": 3
+        }
       ]
     },
     {
@@ -31,19 +118,84 @@
       "default": false,
       "source": "Linux evdev key names; overview and Alt+Tab as configured by GNOME Shell 48 on the test machine",
       "actions": [
-        {"id": "osk", "label": "On-screen keyboard (open / close)", "help": "Shows a keyboard on the screen. While it is open the arrows move, OK types the highlighted key and Back closes it; the same button closes it too", "target": "osk:toggle"},
-        {"id": "overview", "label": "GNOME overview", "help": "Super key: shows all windows, pick one with arrows and Enter", "target": "KEY_LEFTMETA"},
-        {"id": "alttab", "label": "Switch to the previous window", "help": "Alt+Tab from one key only toggles the last two windows", "target": "KEY_LEFTALT+KEY_TAB"},
-        {"id": "playpause", "label": "Play / pause", "help": "Media play/pause", "target": "KEY_PLAYPAUSE"},
-        {"id": "next", "label": "Next track", "help": "Media next", "target": "KEY_NEXTSONG"},
-        {"id": "prev", "label": "Previous track", "help": "Media previous", "target": "KEY_PREVIOUSSONG"},
-        {"id": "ff", "label": "Fast forward", "help": "Media fast forward", "target": "KEY_FASTFORWARD"},
-        {"id": "rew", "label": "Rewind", "help": "Media rewind", "target": "KEY_REWIND"},
-        {"id": "home", "label": "Home page", "help": "Home page key", "target": "KEY_HOMEPAGE"},
-        {"id": "esc", "label": "Escape", "help": "Escape key", "target": "KEY_ESC"},
-        {"id": "enter", "label": "Enter", "help": "Enter key", "target": "KEY_ENTER"},
-        {"id": "backspace", "label": "Backspace", "help": "Backspace key", "target": "KEY_BACKSPACE"},
-        {"id": "f11", "label": "Full screen (F11)", "help": "Toggle full screen in many programs", "target": "KEY_F11"}
+        {
+          "id": "osk",
+          "label": "On-screen keyboard (open / close)",
+          "help": "Shows a keyboard on the screen. While it is open the arrows move, OK types the highlighted key and Back closes it; the same button closes it too",
+          "target": "osk:toggle"
+        },
+        {
+          "id": "overview",
+          "label": "GNOME overview",
+          "help": "Super key: shows all windows, pick one with arrows and Enter",
+          "target": "KEY_LEFTMETA"
+        },
+        {
+          "id": "alttab",
+          "label": "Switch to the previous window",
+          "help": "Alt+Tab from one key only toggles the last two windows",
+          "target": "KEY_LEFTALT+KEY_TAB"
+        },
+        {
+          "id": "playpause",
+          "label": "Play / pause",
+          "help": "Media play/pause",
+          "target": "KEY_PLAYPAUSE"
+        },
+        {
+          "id": "next",
+          "label": "Next track",
+          "help": "Media next",
+          "target": "KEY_NEXTSONG"
+        },
+        {
+          "id": "prev",
+          "label": "Previous track",
+          "help": "Media previous",
+          "target": "KEY_PREVIOUSSONG"
+        },
+        {
+          "id": "ff",
+          "label": "Fast forward",
+          "help": "Media fast forward",
+          "target": "KEY_FASTFORWARD"
+        },
+        {
+          "id": "rew",
+          "label": "Rewind",
+          "help": "Media rewind",
+          "target": "KEY_REWIND"
+        },
+        {
+          "id": "home",
+          "label": "Home page",
+          "help": "Home page key",
+          "target": "KEY_HOMEPAGE"
+        },
+        {
+          "id": "esc",
+          "label": "Escape",
+          "help": "Escape key",
+          "target": "KEY_ESC"
+        },
+        {
+          "id": "enter",
+          "label": "Enter",
+          "help": "Enter key",
+          "target": "KEY_ENTER"
+        },
+        {
+          "id": "backspace",
+          "label": "Backspace",
+          "help": "Backspace key",
+          "target": "KEY_BACKSPACE"
+        },
+        {
+          "id": "f11",
+          "label": "Full screen (F11)",
+          "help": "Toggle full screen in many programs",
+          "target": "KEY_F11"
+        }
       ]
     },
     {
@@ -52,20 +204,90 @@
       "default": false,
       "source": "gsettings on the test machine (GNOME Shell 48.7): org.gnome.shell.keybindings and org.gnome.desktop.wm.keybindings; dash-to-dock schema and docking.js (hot-keys, shortcut, ctrlAltTabManager.addGroup)",
       "actions": [
-        {"id": "quick", "label": "Quick settings menu", "help": "Super+S opens the quick settings menu (network, sound, power) in the top bar", "target": "KEY_LEFTMETA+KEY_S"},
-        {"id": "notif", "label": "Notifications and calendar", "help": "Super+V (or Super+M) opens the notification list and calendar", "target": "KEY_LEFTMETA+KEY_V"},
-        {"id": "appgrid", "label": "Application grid", "help": "Super+A shows all installed applications", "target": "KEY_LEFTMETA+KEY_A"},
-        {"id": "focusdock", "label": "Focus the dock or top bar (then use the arrows)", "help": "Ctrl+Alt+Tab opens the system-controls switcher; the dock registers itself there, so it can then be navigated with the arrows. Not verified with a single tap of a remote key: if it does not select, bind it twice or use the dock items below", "target": "KEY_LEFTCTRL+KEY_LEFTALT+KEY_TAB"},
-        {"id": "dockshow", "label": "Show the dock with its numbers", "help": "Super+Q shows the dock with a number on each icon for 2 seconds (it does not give it focus)", "target": "KEY_LEFTMETA+KEY_Q"},
-        {"id": "dock1", "label": "Dock icon 1", "help": "Super+1 launches or switches to the first icon of the dock", "target": "KEY_LEFTMETA+KEY_1"},
-        {"id": "dock2", "label": "Dock icon 2", "help": "Super+2", "target": "KEY_LEFTMETA+KEY_2"},
-        {"id": "dock3", "label": "Dock icon 3", "help": "Super+3", "target": "KEY_LEFTMETA+KEY_3"},
-        {"id": "dock4", "label": "Dock icon 4", "help": "Super+4", "target": "KEY_LEFTMETA+KEY_4"},
-        {"id": "dock5", "label": "Dock icon 5", "help": "Super+5", "target": "KEY_LEFTMETA+KEY_5"},
-        {"id": "dock6", "label": "Dock icon 6", "help": "Super+6", "target": "KEY_LEFTMETA+KEY_6"},
-        {"id": "dock7", "label": "Dock icon 7", "help": "Super+7", "target": "KEY_LEFTMETA+KEY_7"},
-        {"id": "dock8", "label": "Dock icon 8", "help": "Super+8", "target": "KEY_LEFTMETA+KEY_8"},
-        {"id": "dock9", "label": "Dock icon 9", "help": "Super+9", "target": "KEY_LEFTMETA+KEY_9"}
+        {
+          "id": "quick",
+          "label": "Quick settings menu",
+          "help": "Super+S opens the quick settings menu (network, sound, power) in the top bar",
+          "target": "KEY_LEFTMETA+KEY_S"
+        },
+        {
+          "id": "notif",
+          "label": "Notifications and calendar",
+          "help": "Super+V (or Super+M) opens the notification list and calendar",
+          "target": "KEY_LEFTMETA+KEY_V"
+        },
+        {
+          "id": "appgrid",
+          "label": "Application grid",
+          "help": "Super+A shows all installed applications",
+          "target": "KEY_LEFTMETA+KEY_A"
+        },
+        {
+          "id": "focusdock",
+          "label": "Focus the dock or top bar (then use the arrows)",
+          "help": "Ctrl+Alt+Tab opens the system-controls switcher; the dock registers itself there, so it can then be navigated with the arrows. Not verified with a single tap of a remote key: if it does not select, bind it twice or use the dock items below",
+          "target": "KEY_LEFTCTRL+KEY_LEFTALT+KEY_TAB"
+        },
+        {
+          "id": "dockshow",
+          "label": "Show the dock with its numbers",
+          "help": "Super+Q shows the dock with a number on each icon for 2 seconds (it does not give it focus)",
+          "target": "KEY_LEFTMETA+KEY_Q"
+        },
+        {
+          "id": "dock1",
+          "label": "Dock icon 1",
+          "help": "Super+1 launches or switches to the first icon of the dock",
+          "target": "KEY_LEFTMETA+KEY_1"
+        },
+        {
+          "id": "dock2",
+          "label": "Dock icon 2",
+          "help": "Super+2",
+          "target": "KEY_LEFTMETA+KEY_2"
+        },
+        {
+          "id": "dock3",
+          "label": "Dock icon 3",
+          "help": "Super+3",
+          "target": "KEY_LEFTMETA+KEY_3"
+        },
+        {
+          "id": "dock4",
+          "label": "Dock icon 4",
+          "help": "Super+4",
+          "target": "KEY_LEFTMETA+KEY_4"
+        },
+        {
+          "id": "dock5",
+          "label": "Dock icon 5",
+          "help": "Super+5",
+          "target": "KEY_LEFTMETA+KEY_5"
+        },
+        {
+          "id": "dock6",
+          "label": "Dock icon 6",
+          "help": "Super+6",
+          "target": "KEY_LEFTMETA+KEY_6"
+        },
+        {
+          "id": "dock7",
+          "label": "Dock icon 7",
+          "help": "Super+7",
+          "target": "KEY_LEFTMETA+KEY_7"
+        },
+        {
+          "id": "dock8",
+          "label": "Dock icon 8",
+          "help": "Super+8",
+          "target": "KEY_LEFTMETA+KEY_8"
+        },
+        {
+          "id": "dock9",
+          "label": "Dock icon 9",
+          "help": "Super+9",
+          "target": "KEY_LEFTMETA+KEY_9"
+        }
       ]
     },
     {
@@ -74,16 +296,122 @@
       "default": false,
       "source": "Linux evdev key names",
       "actions": [
-        {"id": "n1", "label": "1", "help": "Digit 1", "target": "KEY_1"},
-        {"id": "n2", "label": "2", "help": "Digit 2", "target": "KEY_2"},
-        {"id": "n3", "label": "3", "help": "Digit 3", "target": "KEY_3"},
-        {"id": "n4", "label": "4", "help": "Digit 4", "target": "KEY_4"},
-        {"id": "n5", "label": "5", "help": "Digit 5", "target": "KEY_5"},
-        {"id": "n6", "label": "6", "help": "Digit 6", "target": "KEY_6"},
-        {"id": "n7", "label": "7", "help": "Digit 7", "target": "KEY_7"},
-        {"id": "n8", "label": "8", "help": "Digit 8", "target": "KEY_8"},
-        {"id": "n9", "label": "9", "help": "Digit 9", "target": "KEY_9"},
-        {"id": "n0", "label": "0", "help": "Digit 0", "target": "KEY_0"}
+        {
+          "id": "n1",
+          "label": "1",
+          "help": "Digit 1",
+          "target": "KEY_1"
+        },
+        {
+          "id": "n2",
+          "label": "2",
+          "help": "Digit 2",
+          "target": "KEY_2"
+        },
+        {
+          "id": "n3",
+          "label": "3",
+          "help": "Digit 3",
+          "target": "KEY_3"
+        },
+        {
+          "id": "n4",
+          "label": "4",
+          "help": "Digit 4",
+          "target": "KEY_4"
+        },
+        {
+          "id": "n5",
+          "label": "5",
+          "help": "Digit 5",
+          "target": "KEY_5"
+        },
+        {
+          "id": "n6",
+          "label": "6",
+          "help": "Digit 6",
+          "target": "KEY_6"
+        },
+        {
+          "id": "n7",
+          "label": "7",
+          "help": "Digit 7",
+          "target": "KEY_7"
+        },
+        {
+          "id": "n8",
+          "label": "8",
+          "help": "Digit 8",
+          "target": "KEY_8"
+        },
+        {
+          "id": "n9",
+          "label": "9",
+          "help": "Digit 9",
+          "target": "KEY_9"
+        },
+        {
+          "id": "n0",
+          "label": "0",
+          "help": "Digit 0",
+          "target": "KEY_0"
+        }
+      ]
+    },
+    {
+      "id": "mouse",
+      "name": "Mouse",
+      "default": false,
+      "source": "The receiver's virtual mouse (uinput): buttons, pointer movement and wheel",
+      "actions": [
+        {
+          "id": "mleft",
+          "label": "Left click",
+          "help": "Left mouse button; held while the remote button is held",
+          "target": "mouse:left"
+        },
+        {
+          "id": "mright",
+          "label": "Right click",
+          "help": "Right mouse button",
+          "target": "mouse:right"
+        },
+        {
+          "id": "mup",
+          "label": "Move pointer up",
+          "help": "Repeats while held and speeds up",
+          "target": "mouse:move-up"
+        },
+        {
+          "id": "mdown",
+          "label": "Move pointer down",
+          "help": "Repeats while held and speeds up",
+          "target": "mouse:move-down"
+        },
+        {
+          "id": "mleftm",
+          "label": "Move pointer left",
+          "help": "Repeats while held and speeds up",
+          "target": "mouse:move-left"
+        },
+        {
+          "id": "mrightm",
+          "label": "Move pointer right",
+          "help": "Repeats while held and speeds up",
+          "target": "mouse:move-right"
+        },
+        {
+          "id": "sup",
+          "label": "Scroll up",
+          "help": "Repeats while held",
+          "target": "mouse:scroll-up"
+        },
+        {
+          "id": "sdown",
+          "label": "Scroll down",
+          "help": "Repeats while held",
+          "target": "mouse:scroll-down"
+        }
       ]
     }
   ]

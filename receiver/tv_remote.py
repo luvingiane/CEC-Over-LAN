@@ -738,6 +738,23 @@ class Router:
                 and not getattr(self.out, "is_dry", lambda: False)():
             self.focus.restore_soon()
 
+    # what Back and Exit usually send; with nothing focused they mean "close this overlay"
+    DISMISS = {("KEY_ESC",), ("KEY_BACKSPACE",), ("KEY_LEFTALT", "KEY_F4")}
+
+    def _dismiss_overlay(self, tap):
+        """Backspace or Alt+F4 while no window has the focus (the dock after Ctrl+Alt+Tab, the
+        overview): neither closes the dock, so send Esc instead, which also hands the focus back
+        to the last window. Returns True if it did."""
+        if tap["type"] != "keys" or tuple(tap["keys"]) not in self.DISMISS or self.focus is None:
+            return False
+        if tap["keys"] == ["KEY_ESC"] or getattr(self.out, "is_dry", lambda: False)():
+            return False   # a plain Esc already takes the normal path
+        v = getattr(self.focus, "_val", None)
+        if v is None or v["pid"] or not getattr(self.focus, "last", None):
+            return False
+        self._click(["KEY_ESC"])
+        return True
+
     def _click(self, names):
         for n in names:
             self.out.key(n, 1)
@@ -824,6 +841,8 @@ class Router:
                 text += f"+tap-on-release:{brief(entry['tap'])}"
             return text + suffix
         if entry["tap"]:
+            if self._dismiss_overlay(entry["tap"]):
+                return "tap:esc-closes-overlay(" + brief(entry["tap"]) + ")" + suffix
             if entry["tap"]["type"] == "keys":
                 for n in entry["tap"]["keys"]:
                     self.out.key(n, 1)

@@ -681,6 +681,24 @@ class FocusRestore(unittest.TestCase):
         self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)])
         self.assertEqual(activated, [111])
 
+    def test_backspace_and_alt_f4_close_the_dock_with_esc(self):
+        for name, tap in (("KEY_BACK", "KEY_BACKSPACE"), ("KEY_EXIT", "KEY_LEFTALT+KEY_F4")):
+            router, out, activated = self.router({name: {"tap": tap}}, win(111, "es-de"), win(0, ""))
+            router.focus.current(); router.focus._at = -99.0
+            router.on_event(name, "DOWN", True)       # the dock has the focus
+            router.on_event(name, "UP", True)
+            time.sleep(0.2)
+            self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)], tap)
+            self.assertEqual(activated, [111], tap)
+
+    def test_backspace_is_left_alone_while_a_window_has_the_focus(self):
+        router, out, activated = self.router({"KEY_BACK": {"tap": "KEY_BACKSPACE"}}, win(111, "es-de"))
+        router.focus.current(); router.focus._at = -99.0
+        router.on_event("KEY_BACK", "DOWN", True)
+        router.on_event("KEY_BACK", "UP", True)
+        self.assertEqual(out.events, [("KEY_BACKSPACE", 1), ("KEY_BACKSPACE", 0)])
+        self.assertEqual(activated, [])
+
     def test_other_keys_never_restore_the_focus(self):
         router, out, activated = self.router({"KEY_UP": {"tap": "KEY_UP"}}, win(111, "es-de"), win(0, ""))
         router.focus.current(); router.focus._at = -99.0

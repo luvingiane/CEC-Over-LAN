@@ -102,7 +102,7 @@ The text is matched, case-insensitively and as a substring, against the window c
 
 ### Esc gives the focus back after the dock
 
-`Ctrl+Alt+Tab` focuses the dock by taking the keyboard focus away from every window, so afterwards `Esc` closes nothing and the arrows keep driving GNOME. When a remote button sends `Esc` while no window has the focus (the dock, the overview, a shell menu), the receiver gives the focus back to the last window that had it (`ActivatePid` of the `focuspid` extension), about a quarter of a second after the `Esc`, so the arrows go to the application on screen again. It does nothing in dry run, and nothing if no window was ever seen.
+`Ctrl+Alt+Tab` focuses the dock by taking the keyboard focus away from every window, so afterwards `Esc` closes nothing and the arrows keep driving GNOME. When a remote button sends `Esc` while no window has the focus (the dock, the overview, a shell menu), the receiver gives the focus back to the last window that had it (`ActivatePid` of the `focuspid` extension), about a quarter of a second after the `Esc`, so the arrows go to the application on screen again. It does nothing in dry run, and nothing if no window was ever seen. The same happens when the button sends `Backspace` or `Alt+F4` (Back and Exit in the default mapping) while no window has the focus: neither closes the dock, so the receiver sends `Esc` instead (log: `esc-closes-overlay`). With a window focused they are sent unchanged.
 
 ### On-screen keyboard
 

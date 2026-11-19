@@ -1154,7 +1154,10 @@ class AppSourceTests(unittest.TestCase):
         src, port = self.make()
         s = self.client(port, "HELLO nope")
         s.sendall(b"KEY_ENTER DOWN\n")
-        self.assertEqual(s.recv(10), b"")                 # closed without OK
+        try:
+            self.assertEqual(s.recv(10), b"")             # closed without OK
+        except ConnectionResetError:
+            pass                                          # or reset: the server closed with the key line still unread
         time.sleep(0.1)
         self.assertEqual(self.keys, [])
         self.assertFalse(src.connected)

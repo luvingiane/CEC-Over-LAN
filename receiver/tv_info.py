@@ -436,7 +436,8 @@ def fetch_art(url):
 # ---------------------------------------------------------------- the window (GTK)
 HEIGHT = 430          # logical pixels: the right column needs about this much
 PROGRESS_H = 8
-ART_SHARE = 0.30                 # the artwork covers this part of the panel's width, from the left edge
+ART_SHARE = 0.40                 # the artwork covers this part of the panel's width, from the left edge
+TEXT_SHARE = 0.30                # the media text starts here (it does not follow the artwork)
 
 
 def css_rgba(c, alpha=None):
@@ -445,7 +446,8 @@ def css_rgba(c, alpha=None):
 
 def build_css(pal):
     text, soft, bg, ac = pal["text"], pal["soft"], pal["bg"], pal["accent"]
-    shadow = f"text-shadow: 0 0 10px {css_rgba(bg, 0.95)}, 0 2px 4px {css_rgba(bg, 0.95)};"
+    # no blur here: a blurred shadow is redone for every label at every frame and cut the panel from 60 to 20 fps
+    shadow = f"text-shadow: 1px 2px 0 {css_rgba(bg, 0.85)};"
     return f"""
 label, label:backdrop {{ color: {css_rgba(soft)}; font-size: 22px; {shadow} }}
 label.title, label.title:backdrop {{ font-size: 42px; font-weight: bold; color: {css_rgba(text)}; }}
@@ -525,7 +527,7 @@ def main():
     canvas.set_vexpand(True)
 
     def backdrop(w, h):
-        """The artwork over the left 30 % of the panel, dimmed and fading to nothing at its end (cached)."""
+        """The artwork over the left ART_SHARE of the panel, dimmed and fading to nothing at its end (cached)."""
         pix = state["art"]
         if pix is None:
             return None
@@ -554,7 +556,10 @@ def main():
         pos = p["position"] + ((time.monotonic() - state["t0"]) * 1e6 if p["status"] == "Playing" else 0)
         return max(0.0, min(1.0, pos / p["length"]))
 
+    stats = {"frames": 0, "draw": 0.0, "last": time.monotonic(), "draws": 0}
+
     def draw_canvas(widget, cr):
+        t_start = time.perf_counter()
         w, h = widget.get_allocated_width(), widget.get_allocated_height()
         bg = pal["bg"]
         cr.set_source_rgba(bg[0], bg[1], bg[2], 0.97)
@@ -582,6 +587,8 @@ def main():
             cr.set_source_rgba(ac[0], ac[1], ac[2], 1.0)
             cr.rectangle(0, h - PROGRESS_H, w * frac, PROGRESS_H)
             cr.fill()
+        stats["draw"] += time.perf_counter() - t_start
+        stats["draws"] += 1
         return False
     canvas.connect("draw", draw_canvas)
 
@@ -636,7 +643,7 @@ def main():
         side.pack_start(row(key, icon_name), False, False, 0)
 
     outer = Gtk.Box(spacing=36)
-    outer.set_margin_start(int(geo.width * ART_SHARE) + 40)       # right after the artwork, over the spectrum
+    outer.set_margin_start(int(geo.width * TEXT_SHARE) + 40)      # over the spectrum, over the faded end of the artwork
     outer.set_margin_end(56)
     outer.set_margin_top(40)
     outer.set_margin_bottom(24 + PROGRESS_H)
@@ -731,7 +738,15 @@ def main():
         if p and p["length"] and p["status"] == "Playing":
             pos = p["position"] + (time.monotonic() - state["t0"]) * 1e6
             set_times(p, min(pos, p["length"]))
-        canvas.queue_draw()
+        h = canvas.get_allocated_height()
+        top = int(h * 0.28)                      # the bars never rise above this: the rest of the panel stays as painted
+        canvas.queue_draw_area(0, top, canvas.get_allocated_width(), h - top)
+        if os.environ.get("CEC_INFO_TRACE"):
+            stats["frames"] += 1
+            now = time.monotonic()
+            if now - stats["last"] >= 1.0:
+                print(f"fps: ticks={stats['frames']} draws={stats['draws']} draw_ms={1000 * stats['draw'] / max(1, stats['draws']):.1f}", flush=True)
+                stats.update(frames=0, draw=0.0, draws=0, last=now)
         return True
 
     poll()
@@ -777,7 +792,7 @@ def main():
     GLib.timeout_add(16, step)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, close)
     GLib.timeout_add(1000, poll)
-    GLib.timeout_add(16, frame)
+    canvas.add_tick_callback(lambda widget, clock: frame())      # in step with the screen, not a blind 16 ms timer
 
     snap = os.environ.get("CEC_INFO_SNAPSHOT")                      # diagnostics: save a picture of the window
     if snap:

@@ -464,7 +464,7 @@ function actionEditor(value, onChange) {
       sel.onchange = () => { value = sel.value ? 'mouse:' + sel.value : ''; onChange(value); };
       holder.append(sel);
     } else if (t === 'info') {
-      holder.append(el('div', { className: 'hint', textContent: 'Shows a panel on the screen for a few seconds: what is playing, the window in front, uptime, CPU, memory, disk, pad batteries.' }));
+      holder.append(el('div', { className: 'hint', textContent: 'Shows a panel on the screen for a few seconds: what is playing, the window in front, uptime, CPU, memory, disk, connected controllers.' }));
     } else if (t === 'osk') {
       holder.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open: arrows move, OK types, Back deletes, Exit closes.' }));
     } else if (t === 'url') {
@@ -1090,7 +1090,7 @@ function renderSheet() {
   if (type === 'keys') sheetKeys(s, val, setVal);
   else if (type === 'app') sheetApps(s, val, setVal);
   else if (type === 'url') sheetUrl(s, val, setVal);
-  else if (type === 'info') s.append(el('div', { className: 'hint', textContent: 'Shows a panel on the screen for a few seconds: what is playing, the window in front, uptime, CPU, memory, disk, pad batteries.' }));
+  else if (type === 'info') s.append(el('div', { className: 'hint', textContent: 'Shows a panel on the screen for a few seconds: what is playing, the window in front, uptime, CPU, memory, disk, connected controllers.' }));
   else if (type === 'mouse') sheetMouse(s, val, setVal);
   else if (type === 'osk') s.append(el('div', { className: 'hint', textContent: 'Opens or closes the on-screen keyboard. While it is open the arrows move, OK types, Back deletes, Exit closes.' }));
   else s.append(el('div', { className: 'hint', textContent: SH.slot === 'tap' ? 'This button does nothing on the machine when tapped.' : 'No long-press action.' }));

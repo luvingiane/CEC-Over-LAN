@@ -1393,6 +1393,23 @@ class InfoPanel(unittest.TestCase):
         self.assertIsNone(tv_info.fetch_art("ftp://example.org/a.png"))
         self.assertIsNone(tv_info.fetch_art("file:///does/not/exist.png"))
 
+    def test_connected_pads_are_listed_with_or_without_a_battery(self):
+        tmp = Path(tempfile.mkdtemp())
+        proc = tmp / "devices"
+        proc.write_text(
+            'I: Bus=0003 Vendor=2dc8 Product=310b Version=0100\nN: Name="8BitDo Ultimate 2 Wireless Controller"\nU: Uniq=\nH: Handlers=event27 js0 \n\n'
+            'I: Bus=0005 Vendor=054c Product=0ce6 Version=8100\nN: Name="DualSense Wireless Controller"\nU: Uniq=d0:bc:c1:43:3a:16\nH: Handlers=event259 js1 \n\n'
+            'I: Bus=0005 Vendor=054c Product=0ce6 Version=8100\nN: Name="DualSense Wireless Controller Motion Sensors"\nU: Uniq=d0:bc:c1:43:3a:16\nH: Handlers=event260 js2 \n\n'
+            'I: Bus=0000 Vendor=0000 Product=0000 Version=0000\nN: Name="TV Remote (CEC-Over-LAN)"\nU: Uniq=\nH: Handlers=kbd event5 js3 \n\n'
+            'I: Bus=0003 Vendor=3151 Product=4011 Version=0110\nN: Name="ROYUAN 2.4G Wireless Keyboard"\nU: Uniq=\nH: Handlers=sysrq kbd event8 \n')
+        root = tmp / "ps"
+        (root / "ps-controller-battery-d0:bc:c1:43:3a:16").mkdir(parents=True)
+        d = root / "ps-controller-battery-d0:bc:c1:43:3a:16"
+        (d / "type").write_text("Battery\n"); (d / "capacity").write_text("65\n"); (d / "status").write_text("Charging\n")
+        got = tv_info.devices(proc, root)
+        self.assertEqual(got, ["8BitDo Ultimate 2 Wireless Controller", "DualSense Wireless Controller 65% (charging)"])
+        self.assertEqual(tv_info.devices(tmp / "missing", tmp / "nothing"), [])            # nothing connected: nothing listed
+
     def test_only_device_batteries_are_listed(self):
         root = Path(tempfile.mkdtemp())
         for name, scope, cap, status in (("ps-controller-battery-d0:bc", "Device", "65", "Charging"),

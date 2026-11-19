@@ -90,8 +90,8 @@ def disk(path="/"):
     return f"{(u.total - u.free) / 1e9:.0f} / {u.total / 1e9:.0f} GB"
 
 
-def batteries(root="/sys/class/power_supply"):
-    """['pad 65% (charging)', ...]: the batteries of devices (pads, mice), not of the machine."""
+def battery_entries(root="/sys/class/power_supply"):
+    """[(directory name, capacity, status)] of the batteries of devices (pads, mice), not of the machine."""
     out = []
     try:
         entries = sorted(Path(root).iterdir())
@@ -108,8 +108,63 @@ def batteries(root="/sys/class/power_supply"):
             status = (d / "status").read_text().strip().lower() if (d / "status").exists() else ""
         except OSError:
             continue
-        name = d.name.replace("ps-controller-battery-", "pad ").replace("hid-", "").split("-battery")[0]
-        out.append(f"{name} {cap}%" + (f" ({status})" if status and status != "discharging" else ""))
+        out.append((d.name, cap, status))
+    return out
+
+
+def battery_text(cap, status):
+    return f"{cap}%" + (f" ({status})" if status and status != "discharging" else "")
+
+
+def batteries(root="/sys/class/power_supply"):
+    """['pad 65% (charging)', ...]: every battery of a device, by its own name."""
+    out = []
+    for name, cap, status in battery_entries(root):
+        short = name.replace("ps-controller-battery-", "pad ").replace("hid-", "").split("-battery")[0]
+        out.append(f"{short} {battery_text(cap, status)}")
+    return out
+
+
+def pads(proc="/proc/bus/input/devices"):
+    """[(name, uniq)] of the game controllers the kernel sees (the devices that have a js handler), without the
+    motion sensor and touchpad parts of a pad and without our own virtual devices."""
+    import re
+    try:
+        text = Path(proc).read_text()
+    except OSError:
+        return []
+    found = []
+    for block in text.split("\n\n"):
+        name = re.search(r'^N: Name="(.*)"', block, re.M)
+        handlers = re.search(r"^H: Handlers=(.*)$", block, re.M)
+        if not name or not handlers or not re.search(r"\bjs\d+\b", handlers.group(1)):
+            continue
+        n = name.group(1)
+        if any(x in n for x in ("Motion Sensors", "Touchpad", "CEC-Over-LAN")):
+            continue
+        uniq = re.search(r"^U: Uniq=(.*)$", block, re.M)
+        entry = (n, (uniq.group(1).strip().lower() if uniq else ""))
+        if entry not in found:
+            found.append(entry)
+    return found
+
+
+def devices(proc="/proc/bus/input/devices", root="/sys/class/power_supply"):
+    """['DualSense Wireless Controller 65% (charging)', '8BitDo Ultimate 2 Wireless Controller', ...]: the pads that
+    are connected (with their battery when the kernel reports one for them) and the batteries of other devices.
+    Many pads (2.4 GHz receivers, wired ones) report no battery at all: they are listed by name."""
+    left = battery_entries(root)
+    out = []
+    for name, uniq in pads(proc):
+        match = next((b for b in left if uniq and uniq.replace(":", "") in b[0].lower().replace(":", "")), None)
+        if match:
+            left.remove(match)
+            out.append(f"{name} {battery_text(match[1], match[2])}")
+        else:
+            out.append(name)
+    for dirname, cap, status in left:
+        short = dirname.replace("ps-controller-battery-", "pad ").replace("hid-", "").split("-battery")[0]
+        out.append(f"{short} {battery_text(cap, status)}")
     return out
 
 
@@ -191,7 +246,7 @@ def snapshot(screen=None):
     return {"time": datetime.now().strftime("%H:%M"), "date": datetime.now().strftime("%a %d %b"),
             "player": pls[0] if pls else None, "front": in_front(), "screen": screen or screen_mode(),
             "uptime": uptime(), "cpu": cpu_percent(), "mem": memory_fraction(), "mem_text": memory(),
-            "disk": disk_fraction(), "disk_text": disk(), "batteries": batteries()}
+            "disk": disk_fraction(), "disk_text": disk(), "batteries": devices()}
 
 
 def memory_fraction(path="/proc/meminfo"):
@@ -717,7 +772,7 @@ def main():
                                 ("disk", d["disk"], d["disk_text"] and f'Disk {d["disk_text"]}')):
             rows[key][1].set_text(text if frac is not None and text else "")
             rows[key][2].set_value(frac or 0)
-        rows["bat"][1].set_text(", ".join(d["batteries"]) or "no pad connected")
+        rows["bat"][1].set_text(", ".join(d["batteries"]) or "no controller connected")
 
     def poll():
         def work():

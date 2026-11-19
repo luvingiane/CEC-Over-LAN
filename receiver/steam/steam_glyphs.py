@@ -63,7 +63,8 @@ def pick_entry(entry):
 def build_map(entries, buttons):
     """{Steam key-cap text: {label, kind, color, title}} from the mapping and the remote model.
 
-    Only single-key tap actions are drawn: a long press or a combination has no key cap."""
+    Only single-key tap actions are drawn: a combination or an app has no key cap. A button that also has a
+    long press keeps the key cap of its tap: pressed briefly it still sends that key."""
     by_code = {b["code"]: (bid, b) for bid, b in buttons.items() if b.get("code")}
     order = {bid: i for i, bid in enumerate(PRIORITY)}
     result, rank = {}, {}
@@ -72,7 +73,7 @@ def build_map(entries, buttons):
             continue
         bid, button = by_code[code]
         tap = pick_entry(entry)["tap"]
-        if not tap or tap["type"] != "keys" or len(tap["keys"]) != 1 or entry_has_long(pick_entry(entry)):
+        if not tap or tap["type"] != "keys" or len(tap["keys"]) != 1:
             continue
         caps = STEAM_LABEL.get(tap["keys"][0])
         if not caps:
@@ -86,9 +87,6 @@ def build_map(entries, buttons):
                 result[cap], rank[cap] = glyph, order.get(bid, 99)
     return result
 
-
-def entry_has_long(entry):
-    return bool(entry.get("long"))
 
 
 JS = r"""

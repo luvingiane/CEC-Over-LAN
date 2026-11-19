@@ -836,11 +836,11 @@ class SteamGlyphs(unittest.TestCase):
         self.assertNotIn("Esc", m)
         self.assertNotIn("Backspace", m)  # the es-de exception does not apply to Steam
 
-    def test_long_presses_and_combinations_have_no_key_cap(self):
-        m = self.build({"KEY_BACK": {"tap": "KEY_ESC", "long": "KEY_LEFTALT+KEY_F4", "hold": 2},
-                        "KEY_SELECT": {"tap": "KEY_LEFTCTRL+KEY_ENTER"},
-                        "KEY_UP": {"tap": "app:kodi.desktop"}})
+    def test_combinations_and_apps_have_no_key_cap_but_a_long_press_keeps_the_tap(self):
+        m = self.build({"KEY_SELECT": {"tap": "KEY_LEFTCTRL+KEY_ENTER"}, "KEY_UP": {"tap": "app:kodi.desktop"}})
         self.assertEqual(m, {})
+        m = self.build({"KEY_BACK": {"tap": "KEY_ESC", "long": "KEY_LEFTALT+KEY_F4", "hold": 2}})
+        self.assertEqual(m["Esc"]["title"], "Back")        # a short press still sends Esc
 
     def test_two_buttons_on_the_same_key_the_more_important_wins(self):
         m = self.build({"KEY_STOPCD": {"tap": "KEY_ESC"}, "KEY_BACK": {"tap": "KEY_ESC"}})

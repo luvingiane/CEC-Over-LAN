@@ -67,11 +67,8 @@ public class KeyService extends AccessibilityService {
     }
 
     @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) {
-        // diagnosis for the gate: which window comes to the front when the TV changes input
-        String w = "WIN " + event.getPackageName() + " " + event.getClassName() + " " + event.getText();
-        queue.offer(w.replaceAll("[^ -~]", "?").substring(0, Math.min(w.length(), 150)));   // the receiver logs it
-    }
+    public void onAccessibilityEvent(AccessibilityEvent event) { refreshForeground(); }
+
     @Override public void onInterrupt() { }
 
     /** One TCP connection to the receiver; reconnects with a growing pause. */
@@ -112,8 +109,50 @@ public class KeyService extends AccessibilityService {
                 gateKnown = now ? 1 : 0;
                 queue.offer(gateLine());
             }
+            refreshForeground();
             try { Thread.sleep(1500); } catch (InterruptedException ie) { return; }
         }
+    }
+
+    private String lastForeground = "";
+    private long lastRefresh;
+
+    /** Sends the line about the window in front when it changes (throttled: events come in bursts). */
+    private synchronized void refreshForeground() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastRefresh < 150) return;
+        lastRefresh = now;
+        String fg = foreground();
+        if (!fg.equals(lastForeground)) { lastForeground = fg; queue.offer("WIN " + fg); }
+    }
+
+    /**
+     * What is in front on the TV, names only. "gate?" is a guess for the machine being shown: the TV's
+     * Live TV app in front (it hosts the HDMI inputs), no tuner window, and nothing with input focus
+     * (a focused row means a menu or panel is open on top).
+     */
+    private String foreground() {
+        StringBuilder sb = new StringBuilder();
+        try {
+            android.view.accessibility.AccessibilityNodeInfo root = getRootInActiveWindow();
+            String pkg = root == null ? "null" : String.valueOf(root.getPackageName());
+            boolean focus = root != null && root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT) != null;
+            boolean dvb = false;
+            StringBuilder wins = new StringBuilder();
+            for (android.view.accessibility.AccessibilityWindowInfo w : getWindows()) {
+                android.view.accessibility.AccessibilityNodeInfo r = w.getRoot();
+                String wp = r == null ? "?" : String.valueOf(r.getPackageName());
+                if (wp.contains("dvbtuner")) dvb = true;
+                wins.append(" t").append(w.getType()).append(w.isActive() ? "*" : "").append(':').append(wp.replaceAll("^.*\\.", ""));
+            }
+            boolean guess = "com.mitv.livetv".equals(pkg) && !dvb && !focus;
+            sb.append("fg=").append(pkg).append(" focus=").append(focus ? "yes" : "no").append(" dvb=").append(dvb ? "yes" : "no")
+              .append(" gate?=").append(guess ? "yes" : "no").append(" |").append(wins);
+        } catch (Exception ex) {
+            sb.append("error ").append(ex);
+        }
+        String s = sb.toString().replaceAll("[^ -~]", "?");
+        return s.substring(0, Math.min(s.length(), 190));
     }
 
     private String gateLine() { return "GATE " + (gateKnown == 1 ? "yes" : "no"); }

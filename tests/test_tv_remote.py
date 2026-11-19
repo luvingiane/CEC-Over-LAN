@@ -370,6 +370,14 @@ class AppRules(unittest.TestCase):
         self.press(router)
         self.assertEqual(out.events, [("KEY_ESC", 1), ("KEY_ESC", 0)])
 
+    def test_the_same_press_from_two_sources_acts_once(self):
+        router, out, _ = make_router({"KEY_SELECT": {"tap": "KEY_ENTER"}})
+        router.on_event("KEY_SELECT", "DOWN", True)
+        router.on_event("KEY_SELECT", "DOWN", True)      # the second input device, or adb next to the app
+        router.on_event("KEY_SELECT", "UP", True)
+        router.on_event("KEY_SELECT", "DOWN", True)      # a real second press, after the release
+        self.assertEqual(out.events, [("KEY_ENTER", 1), ("KEY_ENTER", 0), ("KEY_ENTER", 1)])
+
     def test_release_uses_the_entry_chosen_at_press(self):
         router, out = self.router(FakeFocus(comm="es-de"))
         self.press(router, new_focus=FakeFocus(**{"class": "gnome-shell"}))  # focus moves mid-press

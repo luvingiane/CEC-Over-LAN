@@ -154,7 +154,7 @@ class AppSource:
             if line == "PING":
                 continue
             if line.startswith("WIN "):
-                self.log("[window] " + line[4:150])
+                self.log("[window] " + line[4:190])
                 continue
             bad += 1
             if bad > MAX_BAD_LINES:

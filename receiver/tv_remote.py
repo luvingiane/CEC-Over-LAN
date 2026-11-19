@@ -810,6 +810,8 @@ class Router:
         [seen] KEY_X UP   screen=yes|no held=<seconds> result=<what happened>"""
         now = time.monotonic()
         with self.lock:
+            if state == "DOWN" and now - self.down_at.get(key, -99.0) < 2.0:
+                return   # the same press reported by a second source (two input devices, adb next to the app)
             if state == "UP":
                 held = now - self.down_at.pop(key, now)
                 detail = f"held={held:.2f} result={self._up(key)}"
@@ -1118,12 +1120,17 @@ def run(args):
                 time.sleep(delay)
                 delay = min(delay * 2, 30)
                 continue
+            if app is not None and app.connected:
+                continue    # the app connected while adb was connecting: do not start a second reader
             proc = subprocess.Popen(
                 ["adb", "-s", args.target, "shell", "getevent", "-l"],
                 stdout=subprocess.PIPE, text=True, bufsize=1)
             current["proc"] = proc
             started = time.monotonic()
             for line in proc.stdout:
+                if app is not None and app.connected:
+                    proc.kill()     # same race, seen from the other side
+                    break
                 m = LINE.search(line)
                 if m:
                     router.on_event(m.group(1), m.group(2), gate.active)

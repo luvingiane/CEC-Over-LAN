@@ -13,13 +13,13 @@ import java.net.Socket;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** Sends every key of the TV's remote to the receiver on the computer (see receiver/app_source.py). */
 public class KeyService extends AccessibilityService {
     private static final String TAG = "CecOverLan";
-    private static final Pattern PATH = Pattern.compile("mActiveRoutingPath:\\s*(0x[0-9a-fA-F]+)");
+    // keys the TV always keeps, so the remote can still switch it off, leave the input and change the volume
+    private static final java.util.Set<String> TV_KEEPS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "KEY_POWER", "KEY_HOMEPAGE", "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_MUTE"));
 
     private final BlockingQueue<String> queue = new LinkedBlockingQueue<>(256);
     private volatile boolean running;
@@ -44,7 +44,8 @@ public class KeyService extends AccessibilityService {
     @Override
     protected boolean onKeyEvent(KeyEvent e) {
         int action = e.getAction();
-        boolean consume = Config.CONSUME && machineOnScreen;
+        String named = KeyNames.of(e.getScanCode());
+        boolean consume = Config.CONSUME && machineOnScreen && !TV_KEEPS.contains(named);
         if (e.getRepeatCount() > 0) return consume;          // getevent never printed auto-repeat
         // the remote shows up as two input devices and many keys arrive from both: act on the first DOWN/UP only
         int id = e.getScanCode() != 0 ? e.getScanCode() : 1000 + e.getKeyCode();
@@ -56,7 +57,7 @@ public class KeyService extends AccessibilityService {
         } else if (action == KeyEvent.ACTION_UP && held.remove(id) == null) {
             return consume;
         }
-        String name = KeyNames.of(e.getScanCode());
+        String name = named;
         if (name == null) name = "KEY_ANDROID_" + e.getKeyCode();   // a key Android made itself (no Linux code): bindable too
         Log.i(TAG, "key code=" + e.getKeyCode() + " scan=" + e.getScanCode() + " name=" + name
                 + " action=" + action + " dev=" + e.getDeviceId() + " consume=" + consume);
@@ -100,15 +101,9 @@ public class KeyService extends AccessibilityService {
         }
     }
 
-    /** Reads which HDMI path the TV shows (what the receiver used to ask over adb) and reports changes. */
+    /** Looks at what is in front every 1.5 s (events refresh it sooner); the gate follows from it. */
     private void gateLoop() {
         while (running) {
-            Boolean now = readGate();
-            if (now != null && (gateKnown < 0 || now != machineOnScreen)) {
-                machineOnScreen = now;
-                gateKnown = now ? 1 : 0;
-                queue.offer(gateLine());
-            }
             refreshForeground();
             try { Thread.sleep(1500); } catch (InterruptedException ie) { return; }
         }
@@ -116,20 +111,27 @@ public class KeyService extends AccessibilityService {
 
     private String lastForeground = "";
     private long lastRefresh;
+    private volatile boolean guessNow;
 
-    /** Sends the line about the window in front when it changes (throttled: events come in bursts). */
+    /** Sends the line about the window in front when it changes (events come in bursts, so it is throttled),
+     *  and tells the receiver when the machine appears on or leaves the screen. */
     private synchronized void refreshForeground() {
         long now = android.os.SystemClock.uptimeMillis();
         if (now - lastRefresh < 150) return;
         lastRefresh = now;
         String fg = foreground();
         if (!fg.equals(lastForeground)) { lastForeground = fg; queue.offer("WIN " + fg); }
+        if (guessNow != machineOnScreen || gateKnown < 0) {
+            machineOnScreen = guessNow;
+            gateKnown = guessNow ? 1 : 0;
+            queue.offer(gateLine());
+        }
     }
 
     /**
-     * What is in front on the TV, names only. "gate?" is a guess for the machine being shown: the TV's
+     * What is in front on the TV, names only. The gate is a guess for the machine being shown: the TV's
      * Live TV app in front (it hosts the HDMI inputs), no tuner window, and nothing with input focus
-     * (a focused row means a menu or panel is open on top).
+     * (a focused row means a menu or panel is open on top). dumpsys hdmi_control is closed to apps.
      */
     private String foreground() {
         StringBuilder sb = new StringBuilder();
@@ -145,9 +147,9 @@ public class KeyService extends AccessibilityService {
                 if (wp.contains("dvbtuner")) dvb = true;
                 wins.append(" t").append(w.getType()).append(w.isActive() ? "*" : "").append(':').append(wp.replaceAll("^.*\\.", ""));
             }
-            boolean guess = "com.mitv.livetv".equals(pkg) && !dvb && !focus;
+            guessNow = "com.mitv.livetv".equals(pkg) && !dvb && !focus;
             sb.append("fg=").append(pkg).append(" focus=").append(focus ? "yes" : "no").append(" dvb=").append(dvb ? "yes" : "no")
-              .append(" gate?=").append(guess ? "yes" : "no").append(" |").append(wins);
+              .append(" gate?=").append(guessNow ? "yes" : "no").append(" |").append(wins);
         } catch (Exception ex) {
             sb.append("error ").append(ex);
         }
@@ -156,33 +158,4 @@ public class KeyService extends AccessibilityService {
     }
 
     private String gateLine() { return "GATE " + (gateKnown == 1 ? "yes" : "no"); }
-
-    private int gateMisses;
-
-    private Boolean readGate() {
-        String out = "", err = "";
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{"dumpsys", "hdmi_control"});
-            out = slurp(p.getInputStream());
-            err = slurp(p.getErrorStream());
-            Matcher m = PATH.matcher(out);
-            if (m.find()) { gateMisses = 0; return m.group(1).equalsIgnoreCase(Config.ACTIVE_PATH); }
-        } catch (Exception ex) {
-            err = ex.toString();
-        }
-        if (gateMisses++ % 20 == 0) {   // say why, now and then: this tells whether an app may read the HDMI state
-            Log.i(TAG, "gate: no routing path; stdout=" + out.length() + " bytes '" + head(out) + "' stderr='" + head(err) + "'");
-        }
-        return null;
-    }
-
-    private static String slurp(java.io.InputStream in) throws java.io.IOException {
-        StringBuilder sb = new StringBuilder();
-        BufferedReader r = new BufferedReader(new InputStreamReader(in));
-        String line;
-        while ((line = r.readLine()) != null && sb.length() < 4000) sb.append(line).append('\n');
-        return sb.toString();
-    }
-
-    private static String head(String s) { return s.length() > 400 ? s.substring(0, 400).replace('\n', ' ') : s.replace('\n', ' '); }
 }

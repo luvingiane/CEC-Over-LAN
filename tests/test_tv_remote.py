@@ -1280,6 +1280,21 @@ class InfoPanel(unittest.TestCase):
         router2.on_event("KEY_INFO", "DOWN", True); router2.on_event("KEY_INFO", "UP", True)
         self.assertEqual(len(opened), 1)
 
+    def test_leaving_the_screen_closes_the_panels(self):
+        router, _, _ = make_router({})
+        closed = []
+
+        class Panel:
+            active = True
+            def __init__(self, name): self.name = name
+            def toggle(self): closed.append(self.name)
+        router.info, router.osk = Panel("info"), Panel("osk")
+        router.close_panels()
+        self.assertEqual(closed, ["info", "osk"])
+        router.info.active = router.osk.active = False
+        router.close_panels()
+        self.assertEqual(closed, ["info", "osk"])      # nothing open: nothing to close
+
     def test_readers_with_fake_files(self):
         tmp = Path(tempfile.mkdtemp())
         (tmp / "up").write_text("93784.12 1000.0\n")
@@ -1290,6 +1305,29 @@ class InfoPanel(unittest.TestCase):
         self.assertIsNone(tv_info.memory(tmp / "missing"))
         (tmp / "stat").write_text("cpu 100 0 100 800 0 0 0 0\n")
         self.assertIsNone(tv_info.cpu_percent(tmp / "nothere", wait=0))
+
+    @unittest.skipUnless(__import__("importlib").util.find_spec("numpy"), "numpy not installed")
+    def test_the_spectrum_puts_a_tone_in_its_band(self):
+        import numpy as np
+        edges = tv_info.band_edges(n=1024)
+        t = np.arange(1024) / 44100
+        loud = (np.sin(2 * np.pi * 1000 * t) * 20000).astype("<i2")
+        lv = tv_info.levels_from_samples(loud, edges)
+        peak = max(range(len(lv)), key=lv.__getitem__)
+        centre = (edges[peak] + edges[peak + 1]) / 2 * 44100 / 1024
+        self.assertGreater(lv[peak], 0.5)
+        self.assertLess(abs(centre - 1000), 400)            # the loudest band holds 1 kHz
+        silent = tv_info.levels_from_samples(np.zeros(1024, dtype="<i2"), edges)
+        self.assertEqual(max(silent), 0.0)
+        fall = tv_info.levels_from_samples(np.zeros(1024, dtype="<i2"), edges, previous=lv)
+        self.assertTrue(0 < fall[peak] < lv[peak])          # bars fall smoothly, not at once
+
+    def test_artwork_only_from_files_and_web_and_small(self):
+        tmp = Path(tempfile.mkdtemp()) / "a.png"
+        tmp.write_bytes(b"x" * 10)
+        self.assertEqual(tv_info.fetch_art("file://" + str(tmp)), b"x" * 10)
+        self.assertIsNone(tv_info.fetch_art("ftp://example.org/a.png"))
+        self.assertIsNone(tv_info.fetch_art("file:///does/not/exist.png"))
 
     def test_only_device_batteries_are_listed(self):
         root = Path(tempfile.mkdtemp())

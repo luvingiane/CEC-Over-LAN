@@ -952,6 +952,13 @@ class Router:
             self.mouse.stop(key)
         return result
 
+    def close_panels(self):
+        """The machine left the screen: take its info panel and keyboard away too."""
+        if self.info is not None and self.info.active:
+            self.info.toggle()
+        if self.osk is not None and self.osk.active:
+            self.osk.toggle()
+
     def release_all(self):
         with self.lock:
             for t in self.timers.values():
@@ -1013,6 +1020,7 @@ class Gate:
                 self.active = now
                 if not now:
                     self.router.release_all()
+                    getattr(self.router, "close_panels", lambda: None)()   # the info panel and the keyboard stay behind otherwise
                 print(f"[source] path={path} -> machine on screen: {'yes' if now else 'no'}",
                       flush=True)
             self.stop.wait(self.args.poll)

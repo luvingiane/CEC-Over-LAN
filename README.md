@@ -252,3 +252,26 @@ The address and the token are written into the APK, so keep it to yourself. The 
 
 - `RULES.md`, `PROMPT.md`: the rules and the task given to the agent that ran the tests.
 - `STATUS.md`: test status.
+
+## Roadmap
+
+Ideas that came up and are not done, with what is known. None of this is promised.
+
+**To check on the setup that exists**
+- The TV app after a standby and a reboot of the TV: that the service starts and reconnects by itself has not been tested.
+- The remote's codes read off a test and not confirmed (Netflix, YouTube, EPG, Source, ★ are marked as guesses; Mic and Settings have none yet): confirm them with *Learn*.
+- `docs/ADAPT-PROMPT.md` and `receiver/web/remote-prompt.md` have not been run on another TV, another remote or another computer.
+- GNOME Shell 49 to 51 and X11 sessions (the extension lists 49 to 51; only 48.7 was tried).
+
+**Small things**
+- Close the info panel with Back (today: the Info button again, or after 8 seconds unless music plays and no application is in front).
+- More than one media player: the panel shows the first one that plays.
+- Sharper YouTube artwork: Chromium hands over a small thumbnail (about 23 KB) as a local file, so the fix is in the YouTube TV app: add the `maxresdefault.jpg` image to `navigator.mediaSession.metadata.artwork`, declared as 512x512 so that Chromium picks it. The way Chromium chooses the image is remembered, not tested.
+- A script to retake the screenshots of the machine (they were taken with Mutter's ScreenCast over D-Bus and PipeWire; the script is not in the repository).
+- Update `REPORT.md` and `STATUS.md` with the later work (the TV app, the gate, the info panel).
+
+**Bigger ideas**
+- **Other TVs.** Only a Xiaomi was tried. More profiles in `android/profiles/`, and a "learn" mode in the app that records what is in front on the TV and writes the profile, instead of reading the log by hand. The app also cannot tell HDMI 1 from another HDMI input.
+- **Plasma Bigscreen** (and other desktops). The GNOME-specific pieces would need replacements: the focus extension, the screen mode from Mutter, the accent colour and scheme from GSettings, the GTK 3 windows through Xwayland.
+- **A pad through the TV's Bluetooth.** A DualSense paired to the TV, its buttons and sticks read on the TV and recreated on the machine as a virtual gamepad. The accessibility service only sees buttons, never the sticks, so the sticks would come from `adb shell getevent`; expect some extra latency and no rumble, gyro or battery. Not started: first measure the rate and the delay of the events. The alternative is a Bluetooth adapter on the machine.
+- **Security.** The receiver and the app talk plain TCP with a shared token that is also written into the APK. A per-device token, or TLS, would be the next step.

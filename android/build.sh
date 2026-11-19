@@ -1,24 +1,18 @@
 #!/bin/bash
 # Builds the TV app without Gradle: aapt2, javac, d8, zipalign, apksigner (all from ./sdk).
-#   CEC_HOST=<the computer's address> CEC_TOKEN=<token> ./build.sh      -> build/cec-over-lan-tv.apk
+#   CEC_HOST=<the computer's address> CEC_TOKEN=<token> [CEC_PROFILE=profiles/<your tv>.json] [CEC_CONSUME=true] ./build.sh
+#                                                                       -> build/cec-over-lan-tv.apk
 # The address and token are written into the APK, so it is yours: do not share it.
 set -euo pipefail
 cd "$(dirname "$0")"
 : "${CEC_HOST:?set CEC_HOST to the address of the computer the TV shows}"
 : "${CEC_TOKEN:?set CEC_TOKEN to the contents of ~/cec-over-lan/token}"
-PORT=${CEC_PORT:-8766}; ACTIVE=${CEC_ACTIVE_PATH:-0x1000}; CONSUME=${CEC_CONSUME:-false}
+export CEC_HOST CEC_TOKEN CEC_PORT CEC_ACTIVE_PATH CEC_CONSUME
 SDK=$PWD/sdk; BT=$SDK/build-tools/34.0.0; JAR=$SDK/platforms/android-34/android.jar
 KS=${CEC_KEYSTORE:-$HOME/.config/cec-over-lan/tv-app.keystore}
 rm -rf build && mkdir -p build/gen/org/cecoverlan/tv build/classes
 python3 gen_keynames.py /usr/include/linux/input-event-codes.h build/gen/org/cecoverlan/tv/KeyNames.java
-cat > build/gen/org/cecoverlan/tv/Config.java <<EOF
-package org.cecoverlan.tv;
-final class Config {
-    static final String HOST = "$CEC_HOST", TOKEN = "$CEC_TOKEN", ACTIVE_PATH = "$ACTIVE";
-    static final int PORT = $PORT;
-    static final boolean CONSUME = $CONSUME;
-}
-EOF
+python3 gen_config.py "${CEC_PROFILE:-profiles/xiaomi-mitv.json}" build/gen/org/cecoverlan/tv/Config.java
 "$BT/aapt2" compile --dir res -o build/res.zip
 "$BT/aapt2" link -o build/base.apk -I "$JAR" --manifest AndroidManifest.xml \
     --min-sdk-version 26 --target-sdk-version 34 build/res.zip

@@ -17,9 +17,8 @@ import java.util.concurrent.TimeUnit;
 /** Sends every key of the TV's remote to the receiver on the computer (see receiver/app_source.py). */
 public class KeyService extends AccessibilityService {
     private static final String TAG = "CecOverLan";
-    // keys the TV always keeps, so the remote can still switch it off, leave the input and change the volume
-    private static final java.util.Set<String> TV_KEEPS = new java.util.HashSet<>(java.util.Arrays.asList(
-            "KEY_POWER", "KEY_HOMEPAGE", "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_MUTE"));
+    // keys the TV always keeps, so the remote can still switch it off, leave the input and change the volume (the TV profile)
+    private static final java.util.Set<String> TV_KEEPS = new java.util.HashSet<>(java.util.Arrays.asList(Config.KEEP_KEYS));
 
     private final BlockingQueue<String> queue = new LinkedBlockingQueue<>(256);
     private volatile boolean running;
@@ -144,10 +143,10 @@ public class KeyService extends AccessibilityService {
             for (android.view.accessibility.AccessibilityWindowInfo w : getWindows()) {
                 android.view.accessibility.AccessibilityNodeInfo r = w.getRoot();
                 String wp = r == null ? "?" : String.valueOf(r.getPackageName());
-                if (wp.contains("dvbtuner")) dvb = true;
+                for (String marker : Config.TUNER_MARKERS) if (wp.contains(marker)) dvb = true;
                 wins.append(" t").append(w.getType()).append(w.isActive() ? "*" : "").append(':').append(wp.replaceAll("^.*\\.", ""));
             }
-            guessNow = "com.mitv.livetv".equals(pkg) && !dvb && !focus;
+            guessNow = java.util.Arrays.asList(Config.HDMI_HOSTS).contains(pkg) && !dvb && !focus;
             sb.append("fg=").append(pkg).append(" focus=").append(focus ? "yes" : "no").append(" dvb=").append(dvb ? "yes" : "no")
               .append(" gate?=").append(guessNow ? "yes" : "no").append(" |").append(wins);
         } catch (Exception ex) {

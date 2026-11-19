@@ -1,0 +1,9 @@
+{
+  "uuid": "focuspid@claude",
+  "name": "Focus PID",
+  "description": "Exposes on D-Bus (org.claude.FocusPid) the PID, class and title of the focused window, and can activate a window by PID. Used by CEC-Over-LAN (receiver/tv_remote.py, receiver/tv_info.py).",
+  "shell-version": [
+    "48"
+  ],
+  "version": 1
+}

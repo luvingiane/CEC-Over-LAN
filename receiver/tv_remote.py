@@ -43,6 +43,8 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
+import app_source  # noqa: E402  (the keys sent by the app on the TV)
+
 LINE = re.compile(r"/dev/input/event\d+:\s+EV_KEY\s+(KEY_\w+)\s+(DOWN|UP)\b")
 PATH = re.compile(r"mActiveRoutingPath:\s*(0x[0-9a-fA-F]+)")
 KEY_NAME = re.compile(r"^KEY_[A-Z0-9_]+$")
@@ -924,6 +926,7 @@ class Gate:
         self.stop = threading.Event()
         self.fails = 0
         self.on_dead = None  # called when the TV link looks dead (set by run())
+        self.app = None      # the AppSource, when the TV app is the source of the keys
 
     def read_path(self):
         try:
@@ -939,16 +942,22 @@ class Gate:
     def loop(self):
         want = self.args.active_path.lower()
         while not self.stop.is_set():
-            path = self.read_path()
-            # watchdog: if the TV stops answering (standby, reboot, port change) the adb link
-            # can stay "open" forever; after a few failed reads force a reconnection
-            self.fails = self.fails + 1 if path is None else 0
-            if self.fails >= self.args.dead_after and self.on_dead:
-                print(f"[watchdog] {self.fails} failed source reads, restarting the adb link",
-                      flush=True)
-                self.fails = 0
-                self.on_dead()
-            now = path == want  # if the read fails (None) -> do not inject
+            asked = self.app.gate_state() if self.app is not None else None
+            if asked is not None:
+                path, now, self.fails = "app", asked, 0   # the TV app says it itself: no adb needed
+            elif getattr(self.args, "source", "adb") == "app":
+                path, now = None, False                   # app mode and no app: do not inject
+            else:
+                path = self.read_path()
+                # watchdog: if the TV stops answering (standby, reboot, port change) the adb link
+                # can stay "open" forever; after a few failed reads force a reconnection
+                self.fails = self.fails + 1 if path is None else 0
+                if self.fails >= self.args.dead_after and self.on_dead:
+                    print(f"[watchdog] {self.fails} failed source reads, restarting the adb link",
+                          flush=True)
+                    self.fails = 0
+                    self.on_dead()
+                now = path == want  # if the read fails (None) -> do not inject
             if now != self.active:
                 self.active = now
                 if not now:
@@ -959,6 +968,15 @@ class Gate:
 
 
 ENV_FILE = STATE_DIR / "tv-remote.env"
+TOKEN_FILE = STATE_DIR / "token"
+
+
+def read_token():
+    """The access token shared with the web UI and the TV app, or None."""
+    try:
+        return TOKEN_FILE.read_text().strip() or None
+    except OSError:
+        return None
 
 
 def parse_avahi(text, service):
@@ -1058,11 +1076,35 @@ def run(args):
             p.kill()
 
     gate.on_dead = kill_link
+    source = getattr(args, "source", "adb")
+    app = None
+    if source in ("app", "auto"):
+        token = read_token()
+        if token:
+            app = app_source.AppSource(
+                token, on_key=lambda key, state: router.on_event(key, state, gate.active),
+                port=args.app_port, bind=args.app_bind,
+                on_connect=kill_link,                    # no adb reader next to the app: no doubled keys
+                on_disconnect=router.release_all)
+            try:
+                app.start()
+                gate.app = app
+                print(f"[app] listening for the TV app on port {app.port} (source: {source})", flush=True)
+            except OSError as exc:
+                app = None
+                print(f"[app] cannot listen on port {args.app_port}: {exc}", flush=True)
+        else:
+            print(f"[app] no token in {TOKEN_FILE}: start the web UI once to create it", flush=True)
+        if app is None and source == "app":
+            sys.exit("--source app needs the app port and the token")
     if not args.no_gate:
         threading.Thread(target=gate.loop, daemon=True).start()
     delay = 1
     try:
         while True:
+            if source == "app" or (app is not None and app.connected):
+                time.sleep(1)       # the app is the source: adb stays quiet (it is the fallback)
+                continue
             try:
                 # clears any stale "offline" entry first; follows the TV when its port changed
                 connected = adb_connect(args)
@@ -1103,7 +1145,12 @@ def run(args):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--target", required=True, help="IP:port of the wireless debugging connection")
+    p.add_argument("--target", help="IP:port of the wireless debugging connection (not needed with --source app)")
+    p.add_argument("--source", default="adb", choices=["adb", "app", "auto"],
+                   help="where the keys come from: adb (getevent on the TV), app (the CEC-Over-LAN app on "
+                        "the TV) or auto (the app while it is connected, adb otherwise)")
+    p.add_argument("--app-port", type=int, default=8766, help="TCP port the TV app connects to")
+    p.add_argument("--app-bind", default="0.0.0.0", help="address the TV app port listens on")
     p.add_argument("--dry-run", action="store_true", help="print what would be injected/launched")
     p.add_argument("--keymap", default=str(KEYMAP_FILE), help="path of keymap.json")
     p.add_argument("--no-hide-pointer", action="store_true",
@@ -1123,4 +1170,7 @@ if __name__ == "__main__":
     p.add_argument("--no-gate", action="store_true", help="always inject")
     p.add_argument("--dead-after", type=int, default=4,
                    help="consecutive failed source reads before the adb link is restarted")
-    run(p.parse_args())
+    args = p.parse_args()
+    if args.source != "app" and not args.target:
+        p.error("--target is required unless --source app")
+    run(args)

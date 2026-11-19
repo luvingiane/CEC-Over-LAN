@@ -269,6 +269,7 @@
     <div class="row"><span>Receiver service</span><span id="sService">…</span></div>
     <div class="row"><span>TV link (adb)</span><span id="sLink">…</span></div>
     <div class="row"><span>Machine on TV screen</span><span id="sScreen">…</span></div>
+    <div class="row"><span>Keys come from</span><span id="sSource">…</span></div>
     <div class="row"><span>Target</span><span id="sTarget">…</span></div>
   </div>
 
@@ -343,6 +344,7 @@ async function refresh() {
     setClass($('sService'), s.service, s.service === 'active');
     setClass($('sLink'), s.link, s.link === 'device');
     setClass($('sScreen'), s.on_screen, s.on_screen === 'yes');
+    $('sSource').textContent = s.source === 'app' ? 'the TV app' : 'adb';
     $('sTarget').textContent = s.target || 'not set';
     const pill = (id, text, ok) => { const p = $(id); p.textContent = text; p.className = 'pill ' + (ok ? 'ok' : 'bad'); };
     pill('pService', 'receiver ' + (s.service === 'active' ? '\u2713' : '\u2717'), s.service === 'active');

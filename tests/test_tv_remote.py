@@ -1110,5 +1110,122 @@ class Reconnect(unittest.TestCase):
         self.assertIsNone(core.discover_port("192.168.96.99", lookup=look))
 
 
+import socket as _socket  # noqa: E402
+import types  # noqa: E402
+import app_source  # noqa: E402
+
+
+class AppSourceTests(unittest.TestCase):
+    """The TV app sends the remote's keys over TCP (receiver/app_source.py)."""
+
+    def make(self, **kw):
+        self.keys, self.events = [], []
+        src = app_source.AppSource(
+            "s3cret", on_key=lambda k, s: self.keys.append((k, s)), port=0, bind="127.0.0.1",
+            log=self.events.append, on_connect=lambda: self.events.append("connect"),
+            on_disconnect=lambda: self.events.append("disconnect"), **kw)
+        port = src.start()
+        self.addCleanup(src.stop)
+        return src, port
+
+    def client(self, port, hello="HELLO s3cret"):
+        s = _socket.create_connection(("127.0.0.1", port), timeout=2)
+        self.addCleanup(s.close)
+        s.sendall((hello + "\n").encode())
+        return s
+
+    def wait(self, cond, secs=2.0):
+        end = time.time() + secs
+        while time.time() < end and not cond():
+            time.sleep(0.01)
+        return cond()
+
+    def test_a_wrong_token_is_refused_and_presses_nothing(self):
+        src, port = self.make()
+        s = self.client(port, "HELLO nope")
+        s.sendall(b"KEY_ENTER DOWN\n")
+        self.assertEqual(s.recv(10), b"")                 # closed without OK
+        time.sleep(0.1)
+        self.assertEqual(self.keys, [])
+        self.assertFalse(src.connected)
+
+    def test_keys_gate_and_disconnect(self):
+        src, port = self.make()
+        s = self.client(port)
+        self.assertEqual(s.recv(3), b"OK\n")
+        s.sendall(b"KEY_STOPCD DOWN\nKEY_STOPCD UP\nPING\nGATE yes\n")
+        self.assertTrue(self.wait(lambda: src.gate_state() is True))
+        self.assertEqual(self.keys, [("KEY_STOPCD", "DOWN"), ("KEY_STOPCD", "UP")])
+        s.sendall(b"GATE no\n")
+        self.assertTrue(self.wait(lambda: src.gate_state() is False))
+        s.close()
+        self.assertTrue(self.wait(lambda: not src.connected))
+        self.assertIsNone(src.gate_state())               # nobody to ask any more
+        self.assertIn("disconnect", self.events)
+
+    def test_malformed_lines_never_reach_the_router(self):
+        src, port = self.make()
+        s = self.client(port)
+        s.recv(3)
+        s.sendall(b"key_enter DOWN\nKEY_ENTER SIDEWAYS\nKEY_ENTER\nrm -rf /\nKEY_ENTER DOWN extra\n")
+        s.sendall(b"KEY_ENTER UP\n")
+        self.assertTrue(self.wait(lambda: self.keys))
+        self.assertEqual(self.keys, [("KEY_ENTER", "UP")])
+
+    def test_the_newest_app_replaces_the_old_one(self):
+        src, port = self.make()
+        a = self.client(port); a.recv(3)
+        b = self.client(port); b.recv(3)
+        self.assertTrue(self.wait(lambda: a.recv(1) == b""))   # the first one was closed
+        b.sendall(b"KEY_UP DOWN\n")
+        self.assertTrue(self.wait(lambda: self.keys))
+        self.assertTrue(src.connected)
+
+    def test_silence_closes_the_connection(self):
+        src, port = self.make(silence_s=0.3)
+        s = self.client(port); s.recv(3)
+        self.assertTrue(self.wait(lambda: not src.connected, 3.0))
+
+    def test_only_private_addresses(self):
+        self.assertTrue(app_source.is_private("192.168.96.200"))
+        self.assertTrue(app_source.is_private("127.0.0.1"))
+        self.assertFalse(app_source.is_private("8.8.8.8"))
+        self.assertFalse(app_source.is_private("not an address"))
+
+
+class GateFromTheApp(unittest.TestCase):
+    class FakeApp:
+        def __init__(self, state):
+            self.state = state
+
+        def gate_state(self):
+            return self.state
+
+    def run_gate(self, state, source):
+        args = types.SimpleNamespace(no_gate=False, active_path="0x1000", poll=0.01, dead_after=4, source=source)
+        released = []
+        gate = core.Gate(args, types.SimpleNamespace(release_all=lambda: released.append(1)))
+        gate.read_path = lambda: (_ for _ in ()).throw(AssertionError("adb must not be asked"))
+        gate.app = self.FakeApp(state)
+        th = core.threading.Thread(target=gate.loop, daemon=True)
+        th.start()
+        time.sleep(0.15)
+        gate.stop.set()
+        return gate, released
+
+    def test_the_apps_answer_is_the_gate(self):
+        gate, _ = self.run_gate(True, "app")
+        self.assertTrue(gate.active)
+
+    def test_app_mode_without_an_answer_does_not_inject_and_does_not_use_adb(self):
+        gate, _ = self.run_gate(None, "app")
+        self.assertFalse(gate.active)
+
+    def test_the_app_saying_no_releases_the_keys(self):
+        gate, released = self.run_gate(False, "app")
+        self.assertFalse(gate.active)
+        self.assertEqual(released, [])     # it was never active: nothing to release
+
+
 if __name__ == "__main__":
     unittest.main()

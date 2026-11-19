@@ -35,6 +35,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -46,6 +47,7 @@ from urllib.parse import urlparse
 import app_source  # noqa: E402  (the keys sent by the app on the TV)
 
 LINE = re.compile(r"/dev/input/event\d+:\s+EV_KEY\s+(KEY_\w+)\s+(DOWN|UP)\b")
+APP_BLIND_KEYS = {"KEY_FILE"}   # the mic key: Android handles it before the app can see it, only adb getevent does
 PATH = re.compile(r"mActiveRoutingPath:\s*(0x[0-9a-fA-F]+)")
 KEY_NAME = re.compile(r"^KEY_[A-Z0-9_]+$")
 DESKTOP_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.desktop$")
@@ -139,12 +141,14 @@ MOUSE_NAMES = sorted([*MOUSE_BUTTONS, *MOUSE_MOVES, *MOUSE_SCROLL])
 
 
 def parse_action(text):
-    """Text -> {"type": "keys"|"app"|"url"|"osk"|"mouse", ...} or None when invalid."""
+    """Text -> {"type": "keys"|"app"|"url"|"osk"|"mouse"|"info"|"audio", ...} or None when invalid."""
     if not isinstance(text, str):
         return None
     text = text.strip()
     if text == "osk:toggle":
         return {"type": "osk"}
+    if text == "audio:next":
+        return {"type": "audio"}
     if text == "info:show":
         return {"type": "info"}
     if text.startswith("mouse:"):
@@ -171,6 +175,8 @@ def action_hint(text):
         return "the only keyboard action is osk:toggle"
     if t.startswith("info:"):
         return "the only info action is info:show"
+    if t.startswith("audio:"):
+        return "the only audio action is audio:next"
     if t.startswith("mouse:"):
         return "a mouse action is mouse:<" + "|".join(MOUSE_NAMES) + ">"
     return combo_hint(t)
@@ -181,6 +187,8 @@ def action_to_text(action):
         return "osk:toggle"
     if action["type"] == "info":
         return "info:show"
+    if action["type"] == "audio":
+        return "audio:next"
     if action["type"] == "mouse":
         return "mouse:" + action["name"]
     if action["type"] == "keys":
@@ -260,6 +268,54 @@ def launch(action, dry_run=False):
         threading.Thread(target=proc.wait, daemon=True).start()  # reap, no zombies
     except OSError as exc:
         print(f"[launch] failed: {exc}", flush=True)
+
+
+SOURCE_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "cec-over-lan-source"   # written by the info panel
+SOURCE_TTL_S = 300      # a source picked in the panel keeps the play / next / previous keys for this long
+MPRIS_BUS = re.compile(r"^org\.mpris\.MediaPlayer2\.[A-Za-z0-9_.-]{1,100}$")
+MPRIS_KEYS = {("KEY_PLAYPAUSE",): "PlayPause", ("KEY_NEXTSONG",): "Next", ("KEY_PREVIOUSSONG",): "Previous"}
+
+
+def chosen_player(path=SOURCE_FILE, now=time.time):
+    """The MPRIS bus name of the source picked in the info panel a moment ago, or None."""
+    try:
+        if now() - path.stat().st_mtime > SOURCE_TTL_S:
+            return None
+        bus = path.read_text().strip()
+    except OSError:
+        return None
+    return bus if MPRIS_BUS.match(bus) else None
+
+
+def mpris_call(bus, method, run=subprocess.run, env=None):
+    """PlayPause / Next / Previous sent straight to one player (GNOME would pick the player by itself)."""
+    try:
+        r = run(["busctl", "--user", "call", bus, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player", method],
+                capture_output=True, timeout=3, env=env)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def audio_next(run=subprocess.run, env=None):
+    """Make the next audio output (HDMI, a Bluetooth speaker...) the default one and move what plays to it.
+    Returns the description of the new output, or None when there is nothing to switch to."""
+    def pactl(*args, js=False):
+        cmd = ["pactl"] + (["--format=json"] if js else []) + list(args)
+        return run(cmd, capture_output=True, text=True, timeout=5, env=env).stdout
+    try:
+        sinks = json.loads(pactl("list", "sinks", js=True) or "[]")
+        if len(sinks) < 2:
+            return None
+        names = [s["name"] for s in sinks]
+        cur = pactl("get-default-sink").strip()
+        new = names[(names.index(cur) + 1) % len(names)] if cur in names else names[0]
+        pactl("set-default-sink", new)
+        for item in json.loads(pactl("list", "sink-inputs", js=True) or "[]"):
+            pactl("move-sink-input", str(item["index"]), new)
+        return next(s.get("description") or s["name"] for s in sinks if s["name"] == new)
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+        return None
 
 
 def default_keymap(back_key="KEY_BACKSPACE"):
@@ -476,6 +532,8 @@ class InfoController:
     def __init__(self, starter=None):
         self.proc = None
         self.starter = starter or self._start
+        if starter is None:   # a panel left by a previous run of the receiver cannot be controlled any more: close it
+            subprocess.run(["pkill", "-f", f"python3 -B {INFO_SCRIPT}"], check=False)
 
     @property
     def active(self):
@@ -487,6 +545,21 @@ class InfoController:
             return "closing"
         self.proc = self.starter()
         return "opening"
+
+    def route(self, key):
+        """While the panel is open, left / right pick the previous / next source (it gets a signal)."""
+        if self.active and key in ("KEY_BACK", "KEY_EXIT"):
+            self.proc.terminate()      # Back / Exit close the panel and are not sent on (GNOME would take them for Esc)
+            return "info:close"
+        if not self.active or key not in ("KEY_LEFT", "KEY_RIGHT"):
+            return None
+        self.proc.send_signal(signal.SIGUSR1 if key == "KEY_RIGHT" else signal.SIGUSR2)
+        return "info:next-source" if key == "KEY_RIGHT" else "info:previous-source"
+
+    def hint(self, name):
+        """A next / previous track key goes through while the panel is open: it learns which way the artwork slides."""
+        if self.active and name in ("KEY_NEXTSONG", "KEY_PREVIOUSSONG"):
+            self.proc.send_signal(signal.SIGHUP if name == "KEY_NEXTSONG" else signal.SIGWINCH)
 
     @staticmethod
     def _start():
@@ -824,6 +897,23 @@ class Router:
             self.last_launch["info"] = now
             print(f"[info] {self.info.toggle()}", flush=True)
             return
+        if action["type"] == "audio":
+            if getattr(self.out, "is_dry", lambda: False)():
+                print("[audio] would switch to the next audio output", flush=True)
+                return
+            now = time.monotonic()
+            if now - self.last_launch.get("audio", -99) < 0.5:
+                return
+            self.last_launch["audio"] = now
+            name = audio_next(env=session_env())
+            print(f"[audio] {'now ' + name if name else 'only one output, nothing to switch to'}", flush=True)
+            if name:    # shown on the TV; a missing notify-send is not an error
+                try:
+                    subprocess.Popen(["notify-send", "-t", "2500", "Audio output", name], env=session_env(),
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except OSError:
+                    pass
+            return
         if action["type"] == "mouse":
             if self.mouse is not None:
                 self.mouse.click(action["name"])
@@ -885,12 +975,24 @@ class Router:
             routed = self.osk.route(key)  # keyboard open: the D-pad drives it
             if routed:
                 return routed
+        if self.info is not None:
+            routed = self.info.route(key)  # info panel open: left / right change the source
+            if routed:
+                return routed
         entry = self.keymap.get(key)
         if not entry:
             return "unmapped"
         entry, rule = self._resolve(entry)
+        tap = entry["tap"]
+        if self.info is not None and tap and tap["type"] == "keys" and tap["keys"] in (["KEY_NEXTSONG"], ["KEY_PREVIOUSSONG"]):
+            self.info.hint(tap["keys"][0])
         self.active_entry[key] = entry
         suffix = "@" + re.sub(r"\s+", "_", rule) if rule else ""
+        method = tap and tap["type"] == "keys" and not entry["long"] and MPRIS_KEYS.get(tuple(tap["keys"]))
+        if method and not getattr(self.out, "is_dry", lambda: False)():
+            bus = chosen_player()     # a source was picked in the info panel: the media keys go to that player
+            if bus and mpris_call(bus, method, env=session_env()):
+                return f"tap:mpris-{method}" + suffix
         if entry["long"]:
             t = threading.Timer(entry["hold"], self._fire_long, args=(key, entry["long"]))
             self.timers[key] = t
@@ -1161,8 +1263,8 @@ def run(args):
     delay = 1
     try:
         while True:
-            if source == "app" or (app is not None and app.connected):
-                time.sleep(1)       # the app is the source: adb stays quiet (it is the fallback)
+            if source == "app":
+                time.sleep(1)       # the app is the only source
                 continue
             try:
                 # clears any stale "offline" entry first; follows the TV when its port changed
@@ -1177,19 +1279,15 @@ def run(args):
                 time.sleep(delay)
                 delay = min(delay * 2, 30)
                 continue
-            if app is not None and app.connected:
-                continue    # the app connected while adb was connecting: do not start a second reader
             proc = subprocess.Popen(
                 ["adb", "-s", args.target, "shell", "getevent", "-l"],
                 stdout=subprocess.PIPE, text=True, bufsize=1)
             current["proc"] = proc
             started = time.monotonic()
             for line in proc.stdout:
-                if app is not None and app.connected:
-                    proc.kill()     # same race, seen from the other side
-                    break
                 m = LINE.search(line)
-                if m:
+                # with the app connected, adb only supplies the keys the app cannot see (no doubled keys)
+                if m and (m.group(1) in APP_BLIND_KEYS or not (app is not None and app.connected)):
                     router.on_event(m.group(1), m.group(2), gate.active)
             proc.wait()
             router.release_all()  # avoid stuck keys if adb drops

@@ -1270,15 +1270,108 @@ class InfoPanel(unittest.TestCase):
         self.assertFalse(procs[0].alive)
         self.assertEqual(c.toggle(), "opening")          # a finished panel opens again
 
+    def test_left_and_right_change_the_source_only_while_it_is_open(self):
+        sent = []
+
+        class P:
+            def poll(self): return None
+            def send_signal(self, s): sent.append(s)
+        c = core.InfoController(starter=P)
+        self.assertIsNone(c.route("KEY_RIGHT"))                      # closed: the key is a normal key
+        c.toggle()
+        self.assertEqual(c.route("KEY_RIGHT"), "info:next-source")
+        self.assertEqual(c.route("KEY_LEFT"), "info:previous-source")
+        self.assertIsNone(c.route("KEY_UP"))
+        self.assertEqual(sent, [core.signal.SIGUSR1, core.signal.SIGUSR2])
+
+    def test_back_and_exit_close_the_open_panel_and_are_not_passed_on(self):
+        closed = []
+
+        class P:
+            def poll(self): return None
+            def terminate(self): closed.append(1)
+        c = core.InfoController(starter=P)
+        self.assertIsNone(c.route("KEY_BACK"))                       # closed: Back is a normal key
+        c.toggle()
+        self.assertEqual(c.route("KEY_BACK"), "info:close")
+        self.assertEqual(c.route("KEY_EXIT"), "info:close")
+        self.assertEqual(len(closed), 2)
+
+    def test_switching_player_slides_the_old_one_out_and_the_new_one_in(self):
+        self.assertEqual(tv_info.swap_motion(0.0, 1), (0.0, 1.0))
+        x, a = tv_info.swap_motion(0.25, 1)
+        self.assertLess(x, 0)                                   # right key: the old one leaves towards the left
+        self.assertTrue(0 < a < 1)
+        self.assertEqual(tv_info.swap_motion(0.5, 1, ready=False)[1], 0.0)   # waits, invisible, for the new data
+        x, a = tv_info.swap_motion(0.75, 1)
+        self.assertGreater(x, 0)                                # and the new one comes from the right
+        self.assertEqual(tv_info.swap_motion(1.0, 1), (0.0, 1.0))
+        self.assertLess(tv_info.swap_motion(0.75, -1)[0], 0)    # left key: mirrored
+
+    def test_a_track_key_tells_the_open_panel_which_way_to_slide(self):
+        sent = []
+
+        class P:
+            def poll(self): return None
+            def send_signal(self, s): sent.append(s)
+        c = core.InfoController(starter=P)
+        c.hint("KEY_NEXTSONG")                                   # closed: nobody to tell
+        c.toggle()
+        c.hint("KEY_NEXTSONG"); c.hint("KEY_PREVIOUSSONG"); c.hint("KEY_UP")
+        self.assertEqual(sent, [core.signal.SIGHUP, core.signal.SIGWINCH])
+        router, _, _ = make_router({"KEY_CHANNELUP": {"tap": "KEY_NEXTSONG"}})
+        heard = []
+        router.info = types.SimpleNamespace(hint=heard.append, route=lambda k: None)
+        router.on_event("KEY_CHANNELUP", "DOWN", True); router.on_event("KEY_CHANNELUP", "UP", True)
+        self.assertEqual(heard, ["KEY_NEXTSONG"])
+
+    def test_the_picked_source_gets_play_next_and_previous(self):
+        tmp = Path(tempfile.mkdtemp()) / "source"
+        self.assertIsNone(core.chosen_player(tmp))                                    # nothing picked
+        tmp.write_text("org.mpris.MediaPlayer2.Podcasts")
+        self.assertEqual(core.chosen_player(tmp), "org.mpris.MediaPlayer2.Podcasts")
+        self.assertIsNone(core.chosen_player(tmp, now=lambda: time.time() + core.SOURCE_TTL_S + 5))   # too old
+        tmp.write_text("not a bus name; rm -rf")
+        self.assertIsNone(core.chosen_player(tmp))                                    # never passed on unchecked
+        calls = []
+        ok = lambda cmd, **_: calls.append(cmd) or types.SimpleNamespace(returncode=0)
+        self.assertTrue(core.mpris_call("org.mpris.MediaPlayer2.Podcasts", "PlayPause", run=ok))
+        self.assertEqual(calls[0][-1], "PlayPause")
+        self.assertFalse(core.mpris_call("x", "Next", run=lambda cmd, **_: types.SimpleNamespace(returncode=1)))
+
+    def test_router_sends_the_media_key_to_the_picked_player_or_falls_back_to_the_key(self):
+        sent = []
+        real = (core.chosen_player, core.mpris_call)
+        try:
+            core.chosen_player = lambda: "org.mpris.MediaPlayer2.Podcasts"
+            core.mpris_call = lambda bus, method, **_: sent.append((bus, method)) or True
+            router, out, _ = make_router({"KEY_SEARCH": {"tap": "KEY_PLAYPAUSE"}})
+            router.on_event("KEY_SEARCH", "DOWN", True); router.on_event("KEY_SEARCH", "UP", True)
+            self.assertEqual(sent, [("org.mpris.MediaPlayer2.Podcasts", "PlayPause")])
+            self.assertEqual(out.events, [])                                          # no media key injected
+            core.mpris_call = lambda *a, **k: False                                   # the player is gone: the key as before
+            router.on_event("KEY_SEARCH", "DOWN", True); router.on_event("KEY_SEARCH", "UP", True)
+            self.assertEqual(out.events, [("KEY_PLAYPAUSE", 1), ("KEY_PLAYPAUSE", 0)])
+        finally:
+            core.chosen_player, core.mpris_call = real
+
+    def test_the_chosen_player_is_kept_and_a_vanished_one_falls_back(self):
+        pls = [{"bus": "a"}, {"bus": "b"}, {"bus": "c"}]
+        p = tv_info.pick_player(pls, "b")
+        self.assertEqual((p["bus"], p["index"], p["count"], p["buses"]), ("b", 2, 3, ["a", "b", "c"]))
+        self.assertEqual(tv_info.pick_player(pls, "gone")["bus"], "a")
+        self.assertEqual(tv_info.pick_player(pls)["index"], 1)
+        self.assertIsNone(tv_info.pick_player([]))
+
     def test_router_opens_it_once_and_not_in_dry_run(self):
         router, out, _ = make_router({"KEY_INFO": {"tap": "info:show"}})
         opened = []
-        router.info = types.SimpleNamespace(toggle=lambda: opened.append(1) or "opening")
+        router.info = types.SimpleNamespace(toggle=lambda: opened.append(1) or "opening", route=lambda k: None)
         router.out = FakeMouseOut()
         router.on_event("KEY_INFO", "DOWN", True); router.on_event("KEY_INFO", "UP", True)
         self.assertEqual(len(opened), 1)
         router2, out2, _ = make_router({"KEY_INFO": {"tap": "info:show"}})
-        router2.info = types.SimpleNamespace(toggle=lambda: opened.append(1) or "opening")
+        router2.info = types.SimpleNamespace(toggle=lambda: opened.append(1) or "opening", route=lambda k: None)
         out2.is_dry = lambda: True
         router2.on_event("KEY_INFO", "DOWN", True); router2.on_event("KEY_INFO", "UP", True)
         self.assertEqual(len(opened), 1)
@@ -1432,6 +1525,43 @@ class InfoPanel(unittest.TestCase):
         self.assertEqual(len(got), 2)
         self.assertTrue(any(x.startswith("pad d0:bc 65%") and "charging" in x for x in got))
         self.assertFalse(any("90%" in x for x in got))
+
+
+class AudioOutput(unittest.TestCase):
+    SINKS = json.dumps([{"name": "hdmi", "description": "HDMI"}, {"name": "bt", "description": "Speaker"}])
+
+    def runner(self, default, sinks=None, inputs='[{"index": 7}]'):
+        calls = []
+
+        def run(cmd, **_):
+            calls.append(cmd)
+            if cmd[-2:] == ["list", "sinks"]:
+                out = sinks or self.SINKS
+            elif cmd[-2:] == ["list", "sink-inputs"]:
+                out = inputs
+            elif cmd[-1] == "get-default-sink":
+                out = default + "\n"
+            else:
+                out = ""
+            return types.SimpleNamespace(stdout=out)
+        run.calls = calls
+        return run
+
+    def test_the_action_is_known(self):
+        self.assertEqual(core.parse_action("audio:next"), {"type": "audio"})
+        self.assertEqual(core.action_to_text({"type": "audio"}), "audio:next")
+        self.assertIsNone(core.parse_action("audio:loud"))
+
+    def test_next_output_becomes_default_and_what_plays_moves(self):
+        run = self.runner("hdmi")
+        self.assertEqual(core.audio_next(run), "Speaker")
+        self.assertIn(["pactl", "set-default-sink", "bt"], run.calls)
+        self.assertIn(["pactl", "move-sink-input", "7", "bt"], run.calls)
+
+    def test_it_wraps_around_and_needs_two_outputs(self):
+        self.assertEqual(core.audio_next(self.runner("bt")), "HDMI")
+        self.assertIsNone(core.audio_next(self.runner("hdmi", sinks='[{"name": "hdmi"}]')))
+        self.assertIsNone(core.audio_next(self.runner("hdmi", sinks="not json")))
 
 
 if __name__ == "__main__":

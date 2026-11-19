@@ -2,5 +2,5 @@
   "name": "Xiaomi MiTV (MiTV-MZTU0, Android 14): the Live TV app hosts the HDMI inputs",
   "hdmi_host_packages": ["com.mitv.livetv"],
   "tuner_markers": ["dvbtuner"],
-  "keep_keys": ["KEY_POWER", "KEY_HOMEPAGE", "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_MUTE"]
+  "keep_keys": ["KEY_POWER", "KEY_HOMEPAGE", "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_MUTE", "KEY_APPSELECT"]
 }

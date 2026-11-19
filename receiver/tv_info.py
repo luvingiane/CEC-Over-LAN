@@ -37,6 +37,32 @@ def animation(t, entering):
     return p, max(0.0, 1 - p * 1.3)
 
 
+SWAP_S, SWAP_SHIFT = 0.18, 44     # one player gives way to the next: how long, and how far the text slides (px)
+ART_FADE_S = 0.22                 # an artwork that arrives late (after the slide began) fades in over this time
+ART_SLIDE_S, ART_SHIFT = 0.24, 90 # the artwork slides out and in: how long, and how far (px)
+
+
+def smooth(k):
+    k = min(1.0, max(0.0, k))
+    return k * k * (3 - 2 * k)
+
+
+def swap_motion(t, direction, ready=True):
+    """(slide in px, opacity) of the player block while one player gives way to the next. t runs 0..1: the old
+    one slides away from `direction` (+1 right key, -1 left key) and fades (0..0.5), the new one comes in from
+    that side (0.5..1). Until `ready` (the new player's data has arrived) it waits, invisible, at the half."""
+    t = min(1.0, max(0.0, t))
+    if t < 0.5:
+        k = t * 2
+        k = k * k * (3 - 2 * k)
+        return -direction * SWAP_SHIFT * k, 1 - k
+    if not ready:
+        return direction * SWAP_SHIFT, 0.0
+    k = (t - 0.5) * 2
+    k = k * k * (3 - 2 * k)
+    return direction * SWAP_SHIFT * (1 - k), k
+
+
 # ---------------------------------------------------------------- gathering (no GTK)
 def fmt_duration(seconds):
     seconds = int(seconds)
@@ -202,7 +228,7 @@ def players():
                       "title": title or "(no title)", "artist": ", ".join(meta.get("xesam:artist") or []),
                       "album": meta.get("xesam:album") or "", "art": meta.get("mpris:artUrl") or "",
                       "length": int(meta.get("mpris:length") or 0), "position": int(props.get("Position") or 0),
-                      "entry": root.get("DesktopEntry") or ""})
+                      "entry": root.get("DesktopEntry") or "", "bus": name})
     found.sort(key=lambda p: p["status"] != "Playing")
     return found
 
@@ -258,12 +284,21 @@ def is_sticky(player, front):
     return bool(player and player.get("status") == "Playing" and not is_app(front))
 
 
-def snapshot(screen=None):
+def pick_player(pls, choice=None):
+    """The player to show: the one the user chose (by its bus name) if it is still there, else the first.
+    It carries its place in the list ('index' from 1, 'count') and every bus name ('buses') for left/right."""
+    if not pls:
+        return None
+    i = next((n for n, p in enumerate(pls) if p["bus"] == choice), 0)
+    return dict(pls[i], index=i + 1, count=len(pls), buses=[p["bus"] for p in pls])
+
+
+def snapshot(screen=None, choice=None):
     """Everything the panel shows, as plain data (the window only draws it)."""
-    pls = players()
+    p = pick_player(players(), choice)
     front = in_front()
     return {"time": datetime.now().strftime("%H:%M"), "date": datetime.now().strftime("%a %d %b"),
-            "player": pls[0] if pls else None, "front": front, "sticky": is_sticky(pls[0] if pls else None, front),
+            "player": p, "front": front, "sticky": is_sticky(p, front),
             "screen": screen or screen_mode(),
             "uptime": uptime(), "cpu": cpu_percent(), "mem": memory_fraction(), "mem_text": memory(),
             "disk": disk_fraction(), "disk_text": disk(), "batteries": devices()}
@@ -575,7 +610,11 @@ def main():
 
     spectrum = Spectrum()
     spectrum.start()
-    state = {"data": None, "art": None, "art_url": None, "t0": time.monotonic(), "back": None, "back_key": None}
+    state = {"data": None, "art": None, "art_url": None, "t0": time.monotonic(), "back": None, "back_key": None, "choice": None,
+             "swap": None, "slide": 0.0, "alpha": 1.0, "art_t0": -99.0,
+             "tr": None,                    # the artwork on the move: {t0, dir, old surface}
+             "pending": None,               # a song change waiting for its artwork: (old surface, dir)
+             "track_dir": (1, -99.0)}       # the last next (+1) / previous (-1) track key, and when
     shown = []                                   # the bars as drawn: they follow the spectrum with some inertia
 
     def label(text="", css=None, xalign=0.0):
@@ -639,10 +678,16 @@ def main():
         bg = pal["bg"]
         cr.set_source_rgba(bg[0], bg[1], bg[2], 0.97)
         cr.paint()
+        tr = state["tr"]
+        now = time.monotonic()
+        k = smooth((now - tr["t0"]) / ART_SLIDE_S) if tr else 1.0
+        if tr and tr["old"] is not None:                 # the old artwork leaves towards one side...
+            cr.set_source_surface(tr["old"], -tr["dir"] * ART_SHIFT * k, 0)
+            cr.paint_with_alpha(1 - k)
         back = backdrop(w, h)
-        if back is not None:
-            cr.set_source_surface(back, 0, 0)
-            cr.paint()
+        if back is not None:                             # ...the new one comes from the other
+            cr.set_source_surface(back, tr["dir"] * ART_SHIFT * (1 - k) if tr else 0, 0)
+            cr.paint_with_alpha(k * smooth((now - state["art_t0"]) / ART_FADE_S))
         ac, bars = pal["accent"], pal["bars"]
         n = len(shown)
         if n:
@@ -755,10 +800,28 @@ def main():
                     loader.write(data)
                     loader.close()
                     pix = crop_bars(loader.get_pixbuf())
-                    GLib.idle_add(lambda: (state.update(art=pix), canvas.queue_draw(), False)[2])
+                    GLib.idle_add(lambda: (art_ready(pix), canvas.queue_draw(), False)[2])
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
+
+    def current_back():
+        """The artwork as drawn now (a surface), to let it slide away; None when there is none."""
+        return backdrop(canvas.get_allocated_width(), canvas.get_allocated_height())
+
+    def track_direction():
+        """+1 after a next-track key, -1 after a previous-track key (heard just now); +1 for any other change."""
+        d, when = state["track_dir"]
+        return d if time.monotonic() - when < 4 else 1
+
+    def art_ready(pix):
+        """A loaded artwork: after a song change it slides in together with the old one leaving; otherwise it fades in."""
+        state["art"] = pix
+        pending, state["pending"] = state["pending"], None
+        if pending:
+            state.update(tr={"t0": time.monotonic(), "dir": pending[1], "old": pending[0]}, art_t0=-99.0)
+        else:
+            state["art_t0"] = time.monotonic()
 
     def show(d):
         clock.set_text(d["time"])
@@ -773,7 +836,15 @@ def main():
             player_icon.set_from_gicon(icon_for([p["entry"]] if p["entry"] else [], "multimedia-player-symbolic"), Gtk.IconSize.LARGE_TOOLBAR)
             set_times(p, p["position"])
             if p["art"] != state["art_url"]:
-                state.update(art_url=p["art"], art=None)
+                song_change = state["tr"] is None and state["art"] is not None   # not a source change: that one already moves
+                if song_change and p["art"]:
+                    state["pending"] = (current_back(), track_direction())      # the old artwork stays until the new one is in
+                elif song_change:
+                    state["tr"] = {"t0": time.monotonic(), "dir": track_direction(), "old": current_back()}
+                    state["art"] = None
+                else:
+                    state["art"] = None
+                state["art_url"] = p["art"]
                 canvas.queue_draw()
                 if p["art"]:
                     load_art(p["art"])
@@ -796,9 +867,62 @@ def main():
 
     def poll():
         def work():
-            data = snapshot(screen_text)
-            GLib.idle_add(lambda: (state.update(data=data), show(data), False)[2])
+            data = snapshot(screen_text, state["choice"])
+            GLib.idle_add(lambda: (deliver(data), False)[1])
         threading.Thread(target=work, daemon=True).start()
+        return True
+
+    def deliver(data):
+        """New data: drawn at once, or held until the old player has left when one is giving way to the next."""
+        sw = state["swap"]
+        if sw and not sw["applied"]:
+            p = data["player"]
+            if p is None or p["bus"] == state["choice"]:     # data asked for before the key press is stale: dropped
+                sw["pending"] = data
+            return
+        state.update(data=data)
+        show(data)
+
+    def drive_swap():
+        """Every frame: slides and fades the player block; shows the new player at the half of the movement."""
+        sw = state["swap"]
+        if not sw:
+            return False
+        now = time.monotonic()
+        t = (now - sw["t0"]) / SWAP_S
+        if t >= 0.5 and sw["pending"] is not None:
+            sw["applied"], data, sw["pending"] = True, sw["pending"], None
+            state.update(data=data)
+            show(data)
+        if t >= 0.5 and not sw["applied"] and now - sw["t0"] > 1.5:
+            sw["applied"] = True                           # the new player never answered: show whatever comes next
+        slide, alpha = swap_motion(t, sw["dir"], sw["applied"])
+        state.update(slide=slide, alpha=alpha)
+        outer.set_margin_start(TEXT_MARGIN + int(slide))
+        mid.set_opacity(alpha)
+        times.set_opacity(alpha)
+        if t >= 1.0 and sw["applied"]:
+            state["swap"] = None
+        return True
+
+    def step_source(delta):
+        """The receiver sends SIGUSR1 / SIGUSR2 for right / left: the next / previous player."""
+        d = state["data"]
+        p = d and d["player"]
+        if not p or p["count"] < 2:
+            return True
+        buses = p["buses"]
+        cur = buses.index(state["choice"]) if state["choice"] in buses else p["index"] - 1
+        state["choice"] = buses[(cur + delta) % len(buses)]
+        try:    # the receiver sends play / next / previous to this player from now on
+            import tv_remote as core
+            core.SOURCE_FILE.write_text(state["choice"])
+        except OSError:
+            pass
+        now = time.monotonic()
+        state["swap"] = {"t0": now, "dir": delta, "pending": None, "applied": False}
+        state.update(tr={"t0": now, "dir": delta, "old": current_back()}, art=None, art_url=None, pending=None)
+        poll()
         return True
 
     def frame():
@@ -814,8 +938,15 @@ def main():
             pos = p["position"] + (time.monotonic() - state["t0"]) * 1e6
             set_times(p, min(pos, p["length"]))
         h = canvas.get_allocated_height()
-        top = int(h * 0.28)                      # the bars never rise above this: the rest of the panel stays as painted
-        canvas.queue_draw_area(0, top, canvas.get_allocated_width(), h - top)
+        moving = drive_swap()
+        tr = state["tr"]
+        if tr and time.monotonic() - tr["t0"] > ART_SLIDE_S + 0.05:
+            state["tr"] = None
+        if moving or tr or time.monotonic() - state["art_t0"] < ART_FADE_S:
+            canvas.queue_draw()                  # the artwork moves or fades: the whole canvas
+        else:
+            top = int(h * 0.28)                  # the bars never rise above this: the rest of the panel stays as painted
+            canvas.queue_draw_area(0, top, canvas.get_allocated_width(), h - top)
         if os.environ.get("CEC_INFO_TRACE"):
             stats["frames"] += 1
             now = time.monotonic()
@@ -883,6 +1014,10 @@ def main():
     place(*animation(0.0, True))
     GLib.timeout_add(16, step)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, close)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, lambda: step_source(1))
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR2, lambda: step_source(-1))
+    for sig, d in ((signal.SIGHUP, 1), (signal.SIGWINCH, -1)):    # a next / previous track key went through (GLib takes few signals)
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, lambda d=d: (state.update(track_dir=(d, time.monotonic())), True)[1])
     GLib.timeout_add(1000, poll)
     canvas.add_tick_callback(lambda widget, clock: frame())      # in step with the screen, not a blind 16 ms timer
 

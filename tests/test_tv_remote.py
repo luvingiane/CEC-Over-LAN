@@ -497,7 +497,7 @@ class OskModelTests(unittest.TestCase):
                          [e.KEY_LEFTSHIFT, e.KEY_7])
 
     def test_key_size_is_the_one_the_owner_approved(self):
-        # on the owner's 1712 px wide screen a letter key is 2 units = 102 px (the first version)
+        # on the user's 1712 px wide screen a letter key is 2 units = 102 px (the first version)
         self.assertEqual(osk.key_unit(1712), 51)
         self.assertEqual(osk.key_unit(1712) * 2, 102)
         self.assertEqual(osk.key_unit(300), 34)        # never smaller than a readable minimum
@@ -639,7 +639,7 @@ class RemoteModel(unittest.TestCase):
 
 
 class CustomRemote(unittest.TestCase):
-    """A remote described by the owner's AI (REMOTE-PROMPT) replaces the built-in drawing."""
+    """A remote described by the user's AI (REMOTE-PROMPT) replaces the built-in drawing."""
 
     def setUp(self):
         import tv_remote_web as web

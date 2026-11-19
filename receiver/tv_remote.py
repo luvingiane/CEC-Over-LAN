@@ -111,7 +111,7 @@ def parse_combo(text):
 
 
 def combo_hint(text):
-    """Why a key combination was refused, in words the owner can act on."""
+    """Why a key combination was refused, in words the user can act on."""
     if not isinstance(text, str) or not text.strip():
         return "empty"
     parts = [p for p in text.split("+") if p.strip()]
@@ -424,7 +424,7 @@ def DryFlag(path):
 
 
 def KeepPointerFlag(path):
-    """ON = the owner wants the mouse pointer left alone (it is hidden by default)."""
+    """ON = the user wants the mouse pointer left alone (it is hidden by default)."""
     return FileFlag(path, "[pointer] ON: the mouse pointer is left where it is",
                     "[pointer] OFF: the mouse pointer is moved out of the way on remote presses")
 
@@ -591,7 +591,7 @@ CORNERS = {"top-right": (1, -1), "bottom-right": (1, 1), "top-left": (-1, -1), "
 
 class Pointer:
     """Hides the mouse pointer by moving it to a screen corner, where most of the cursor image
-    hangs off the screen. Does nothing in dry run or when the owner wants the pointer.
+    hangs off the screen. Does nothing in dry run or when the user wants the pointer.
 
     The corner matters: a bottom dock with auto-hide (dash-to-dock) reveals itself when the
     pointer pushes against the bottom edge and then never hides while the pointer is over it,

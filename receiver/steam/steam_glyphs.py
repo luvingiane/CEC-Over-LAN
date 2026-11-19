@@ -30,7 +30,7 @@ import tv_remote as core  # noqa: E402
 FOCUS_TEXT = "steam steam big picture mode steamwebhelper"
 
 # injected key -> the texts Steam may print on its key cap. Steam translates the names of some keys
-# (on the owner's machine, in Italian, Enter is "Invio"); `--dump` prints what Steam really shows,
+# (on the user's machine, in Italian, Enter is "Invio"); `--dump` prints what Steam really shows,
 # which is how a missing name is found. The Italian ones other than Invio are not verified.
 STEAM_LABEL = {"KEY_ESC": ("Esc",), "KEY_ENTER": ("Enter", "Invio"), "KEY_SPACE": ("Space", "Spazio"),
                "KEY_TAB": ("Tab",), "KEY_BACKSPACE": ("Backspace",), "KEY_DELETE": ("Del", "Canc"),
@@ -130,7 +130,7 @@ JS = r"""
 
 
 def load_map():
-    """Compute the map from the owner's keymap.json and the remote model."""
+    """Compute the map from the user's keymap.json and the remote model."""
     import tv_remote_web as web
     try:
         raw = json.loads(core.KEYMAP_FILE.read_text())["keys"]

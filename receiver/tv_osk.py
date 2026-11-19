@@ -166,7 +166,7 @@ def detect_layout():
 
 GAP = 8                    # gap between keys, in pixels
 KEY_UNIT_SHARE = 0.66 / 22  # a key of weight 1 is this share of the screen width: the key size
-                            # the owner found right (the panel is wider, the keys are not)
+                            # the user found right (the panel is wider, the keys are not)
 
 
 def key_unit(screen_width):

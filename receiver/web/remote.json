@@ -1,5 +1,5 @@
 {
- "name": "Xiaomi Google TV remote (photo supplied by the owner)",
+ "name": "Xiaomi Google TV remote",
  "note": "code = the Linux key name the TV's kernel reports for the button (what `adb shell getevent -l` prints). null = not known yet: tap the button in the web UI and use Learn. guess = deduced, not confirmed on the remote.",
  "layout": [
   {"align": "between", "items": ["power", "mic"]},

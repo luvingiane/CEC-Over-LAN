@@ -59,7 +59,7 @@ Volume is left to the TV. The physical Home key reaches `getevent` but is not ma
 
 ## Requirements
 
-- On the TV: Android / Google TV 11 or newer, with Developer options and Wireless debugging enabled by the owner (to pair, and to install the TV app once).
+- On the TV: Android / Google TV 11 or newer, with Developer options and Wireless debugging enabled by me (to pair, and to install the TV app once).
 - On the machine: GNOME Shell 48 to 51 on Wayland (see *Support and limitations*), `adb` (`android-tools-adb`), Python 3 with `python-evdev` and PyGObject (GTK 3), write access to `/dev/uinput` (via an ACL here). Optional: `avahi-utils` (finds the TV's port by itself), PipeWire with `pw-record` and `numpy` (the spectrum of the info panel).
 
 ## Usage
@@ -222,7 +222,7 @@ python3 -m unittest discover -s tests -v    # keymap validation, routing, long p
 
 ## TV app or adb only?
 
-Both are supported and `--source auto` (the default of the unit) uses the app while it is connected and adb otherwise. The owner tested a standby and a reboot of the TV on the Xiaomi: the app comes back by itself both times; the adb link does not (Wireless debugging is switched off).
+Both are supported and `--source auto` (the default of the unit) uses the app while it is connected and adb otherwise. I tested a standby and a reboot of the TV on the Xiaomi: the app comes back by itself both times; the adb link does not (Wireless debugging is switched off).
 
 | | **With the TV app** | **adb only** |
 |---|---|---|

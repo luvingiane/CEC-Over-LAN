@@ -21,7 +21,7 @@ One entry per button you can see, keyed by an id of lower-case letters, digits a
 | field   | meaning |
 |---------|---------|
 | `label` | What is drawn on the button on screen: 1 to 12 characters. Use the text printed on the remote ("EXIT", "INFO", "OK") or a plain symbol (`▲ ▼ ◀ ▶ ← ⌂ + −`). Never an emoji. |
-| `title` | The button's name in words, for the owner: "Volume +", "Netflix button". |
+| `title` | The button's name in words, for me: "Volume +", "Netflix button". |
 | `code`  | The Linux key name the button sends, for example `KEY_VOLUMEUP`, or `null`. See "Codes" below. |
 | `guess` | `true` if you deduced the code and are not certain. Leave it out when `code` is `null`. |
 | `shape` | `round` (a round key, the default), `small` (a small oval key), `wide` (a wide oval key, for streaming shortcuts) or `color` (a coloured round key). |
@@ -57,7 +57,7 @@ playback    KEY_PLAYPAUSE KEY_NEXTSONG KEY_PREVIOUSSONG KEY_FASTFORWARD KEY_REWI
 
 Rules:
 
-* Put a code only where you are confident. Everything else is `null`: the owner presses the button on the real remote and the web page learns the code. A `null` is correct and useful; a wrong code is harmful.
+* Put a code only where you are confident. Everything else is `null`: I press the button on the real remote and the web page learns the code. A `null` is correct and useful; a wrong code is harmful.
 * Do not copy the codes of another remote model. Colour keys, shortcut keys (Netflix, YouTube...), "Live TV", "Source", "Info" and "Assistant" vary a lot between makers: `null` unless you know this exact model.
 * Two buttons never share a code.
 * If you deduced a code from its function (digits, volume, arrows), add `"guess": true`.

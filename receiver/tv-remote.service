@@ -1,5 +1,5 @@
 # systemd USER unit (no root needed). NOT installed yet.
-# Planned installation, after the owner's approval:
+# Planned installation, after the user's approval:
 #   mkdir -p ~/.config/systemd/user
 #   cp tv-remote.service ~/.config/systemd/user/
 #   echo 'TV_TARGET=<TV_IP>:<PORT>' > ~/cec-over-lan/tv-remote.env

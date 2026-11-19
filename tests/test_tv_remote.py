@@ -1245,5 +1245,65 @@ class GateFromTheApp(unittest.TestCase):
         self.assertEqual(released, [])     # it was never active: nothing to release
 
 
+import tv_info  # noqa: E402
+
+
+class InfoPanel(unittest.TestCase):
+    def test_the_action_is_known(self):
+        self.assertEqual(core.parse_action("info:show"), {"type": "info"})
+        self.assertEqual(core.action_to_text({"type": "info"}), "info:show")
+        self.assertIsNone(core.parse_action("info:everything"))
+
+    def test_toggle_opens_then_closes(self):
+        procs = []
+
+        class P:
+            alive = True
+            def poll(self): return None if self.alive else 0
+            def terminate(self): self.alive = False
+        c = core.InfoController(starter=lambda: procs.append(P()) or procs[-1])
+        self.assertEqual(c.toggle(), "opening")
+        self.assertEqual(c.toggle(), "closing")
+        self.assertFalse(procs[0].alive)
+        self.assertEqual(c.toggle(), "opening")          # a finished panel opens again
+
+    def test_router_opens_it_once_and_not_in_dry_run(self):
+        router, out, _ = make_router({"KEY_INFO": {"tap": "info:show"}})
+        opened = []
+        router.info = types.SimpleNamespace(toggle=lambda: opened.append(1) or "opening")
+        router.out = FakeMouseOut()
+        router.on_event("KEY_INFO", "DOWN", True); router.on_event("KEY_INFO", "UP", True)
+        self.assertEqual(len(opened), 1)
+        router2, out2, _ = make_router({"KEY_INFO": {"tap": "info:show"}})
+        router2.info = types.SimpleNamespace(toggle=lambda: opened.append(1) or "opening")
+        out2.is_dry = lambda: True
+        router2.on_event("KEY_INFO", "DOWN", True); router2.on_event("KEY_INFO", "UP", True)
+        self.assertEqual(len(opened), 1)
+
+    def test_readers_with_fake_files(self):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "up").write_text("93784.12 1000.0\n")
+        (tmp / "mem").write_text("MemTotal: 16777216 kB\nMemFree: 1 kB\nMemAvailable: 8388608 kB\n")
+        self.assertEqual(tv_info.uptime(tmp / "up"), "1 d 2 h 3 min")
+        self.assertEqual(tv_info.memory(tmp / "mem"), "8.0 / 16.0 GB")
+        self.assertIsNone(tv_info.uptime(tmp / "missing"))
+        self.assertIsNone(tv_info.memory(tmp / "missing"))
+        (tmp / "stat").write_text("cpu 100 0 100 800 0 0 0 0\n")
+        self.assertIsNone(tv_info.cpu_percent(tmp / "nothere", wait=0))
+
+    def test_only_device_batteries_are_listed(self):
+        root = Path(tempfile.mkdtemp())
+        for name, scope, cap, status in (("ps-controller-battery-d0:bc", "Device", "65", "Charging"),
+                                         ("BAT0", "System", "90", "Discharging"), ("hid-1234-battery", "Device", "40", "Discharging")):
+            d = root / name
+            d.mkdir()
+            (d / "type").write_text("Battery\n"); (d / "scope").write_text(scope + "\n")
+            (d / "capacity").write_text(cap + "\n"); (d / "status").write_text(status + "\n")
+        got = tv_info.batteries(root)
+        self.assertEqual(len(got), 2)
+        self.assertTrue(any(x.startswith("pad d0:bc 65%") and "charging" in x for x in got))
+        self.assertFalse(any("90%" in x for x in got))
+
+
 if __name__ == "__main__":
     unittest.main()

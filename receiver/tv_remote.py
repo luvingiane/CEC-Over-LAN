@@ -145,6 +145,8 @@ def parse_action(text):
     text = text.strip()
     if text == "osk:toggle":
         return {"type": "osk"}
+    if text == "info:show":
+        return {"type": "info"}
     if text.startswith("mouse:"):
         name = text[6:].strip()
         return {"type": "mouse", "name": name} if name in MOUSE_NAMES else None
@@ -167,6 +169,8 @@ def action_hint(text):
         return "a website is written url:http(s)://…"
     if t.startswith("osk:"):
         return "the only keyboard action is osk:toggle"
+    if t.startswith("info:"):
+        return "the only info action is info:show"
     if t.startswith("mouse:"):
         return "a mouse action is mouse:<" + "|".join(MOUSE_NAMES) + ">"
     return combo_hint(t)
@@ -175,6 +179,8 @@ def action_hint(text):
 def action_to_text(action):
     if action["type"] == "osk":
         return "osk:toggle"
+    if action["type"] == "info":
+        return "info:show"
     if action["type"] == "mouse":
         return "mouse:" + action["name"]
     if action["type"] == "keys":
@@ -461,6 +467,36 @@ def make_pointer_device():
         return None
 
 
+INFO_SCRIPT = Path(__file__).resolve().with_name("tv_info.py")
+
+
+class InfoController:
+    """Opens the info panel (tv_info.py) and closes it if the action is used again while it is open."""
+
+    def __init__(self, starter=None):
+        self.proc = None
+        self.starter = starter or self._start
+
+    @property
+    def active(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def toggle(self):
+        if self.active:
+            self.proc.terminate()
+            return "closing"
+        self.proc = self.starter()
+        return "opening"
+
+    @staticmethod
+    def _start():
+        env = dict(session_env())
+        env["GDK_BACKEND"] = "x11"      # as the keyboard: an X11 window that never takes the focus
+        return subprocess.Popen(scope_cmd([sys.executable, "-B", str(INFO_SCRIPT)]), env=env,
+                                start_new_session=True, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 class Mouse:
     """Mouse actions on the virtual mouse (the same device that hides the pointer).
 
@@ -723,13 +759,14 @@ def focus_label(f):
 class Router:
     """Turns remote key events into injected keys / launches following the keymap."""
 
-    def __init__(self, keymap, out, launcher=None, pointer=None, focus=None, osk=None, mouse=None):
+    def __init__(self, keymap, out, launcher=None, pointer=None, focus=None, osk=None, mouse=None, info=None):
         self.keymap = keymap
         self.out = out
         self.pointer = pointer
         self.focus = focus
         self.osk = osk
         self.mouse = mouse
+        self.info = info
         self.mouse_keys = set()  # remote keys whose mouse action is running
         self.active_entry = {}  # remote key -> the entry chosen at DOWN (used again at UP)
         self.launcher = launcher or (lambda action: launch(action, out.is_dry()))
@@ -774,6 +811,18 @@ class Router:
         """One-shot execution of an action (click for keys, launch for app/url)."""
         if action["type"] == "keys":
             self._click(action["keys"])
+            return
+        if action["type"] == "info":
+            if self.info is None:
+                return
+            if getattr(self.out, "is_dry", lambda: False)():
+                print("[info] would open or close the info panel", flush=True)
+                return
+            now = time.monotonic()
+            if now - self.last_launch.get("info", -99) < 0.8:
+                return
+            self.last_launch["info"] = now
+            print(f"[info] {self.info.toggle()}", flush=True)
             return
         if action["type"] == "mouse":
             if self.mouse is not None:
@@ -1068,7 +1117,7 @@ def run(args):
     if not args.no_hide_pointer:
         pointer = Pointer(out, KeepPointerFlag(args.pointer_file), mouse_dev, args.pointer_corner)
     router = Router(keymap, out, pointer=pointer, focus=Focus(), osk=OskController(),
-                    mouse=Mouse(out, mouse_dev))
+                    mouse=Mouse(out, mouse_dev), info=InfoController())
     gate = Gate(args, router)
     current = {"proc": None}
 

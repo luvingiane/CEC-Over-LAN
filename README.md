@@ -1,6 +1,6 @@
 # CEC-Over-LAN
 
-Use the physical remote of a Google TV as an input device for a Linux VM (or PC) connected to the TV over HDMI, when HDMI-CEC does not carry the keys: the key presses travel over the LAN (adb) and the receiver injects them only while the TV is showing the machine.
+Use the physical remote of a Google TV as an input device for a Linux VM (or PC) connected to the TV over HDMI, when you don't have a CEC capable device (literally every GPUs in the market don't have CEC chip inside): the key presses travel over the LAN (adb) and the receiver injects them only while the TV is showing the machine.
 
 How it works (variant A, no app on the TV):
 

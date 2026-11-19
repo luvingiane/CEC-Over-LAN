@@ -1359,6 +1359,18 @@ class InfoPanel(unittest.TestCase):
         self.assertIsNone(tv_info.parse_color("@accent"))
         self.assertEqual(tv_info.parse_color("#fff"), (1.0, 1.0, 1.0, 1.0))
 
+    def test_the_panel_rises_and_leaves_smoothly(self):
+        self.assertEqual(tv_info.animation(0.0, True), (1.0, 0.0))        # below the edge, invisible
+        self.assertEqual(tv_info.animation(1.0, True), (0.0, 1.0))        # in place
+        self.assertEqual(tv_info.animation(0.0, False), (0.0, 1.0))
+        self.assertEqual(tv_info.animation(1.0, False), (1.0, 0.0))
+        steps = [tv_info.animation(i / 20, True) for i in range(21)]
+        self.assertTrue(all(a[0] >= b[0] and a[1] <= b[1] for a, b in zip(steps, steps[1:])))   # always moving the right way
+        self.assertLess(steps[10][0], 0.2)                                # eases in: most of the way done at half time
+        out = [tv_info.animation(i / 20, False) for i in range(21)]
+        self.assertTrue(all(a[0] <= b[0] and a[1] >= b[1] for a, b in zip(out, out[1:])))
+        self.assertEqual(tv_info.animation(5, True), (0.0, 1.0))          # out-of-range input is clamped
+
     def test_text_stays_readable_over_the_theme_colours(self):
         tmp = Path(tempfile.mkdtemp()) / "gtk.css"
         tmp.write_text("@define-color window-bg-color #1a1b26;\n@define-color window-fg-color #a9b1d6;\n@define-color accent-bg-color #cfc9ff;\n")

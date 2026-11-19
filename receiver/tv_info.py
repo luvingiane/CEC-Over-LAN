@@ -13,6 +13,7 @@ pw-record the spectrum stays flat).
 """
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -22,6 +23,18 @@ from datetime import datetime
 from pathlib import Path
 
 SHOW_SECONDS = 8
+ENTER_S, EXIT_S = 0.32, 0.24      # the panel rises from the bottom edge, fading in; it leaves the same way
+
+
+def animation(t, entering):
+    """(slide, alpha) for the progress t (0..1) of the entrance or the exit: slide is the part of the panel's
+    height it is still below its place (1 = fully below the edge, 0 = in place), alpha its opacity."""
+    t = min(1.0, max(0.0, t))
+    if entering:
+        p = 1 - (1 - t) ** 3                    # fast at first, easing into place
+        return 1 - p, min(1.0, p * 1.6)
+    p = t ** 3                                  # slow at first, then away
+    return p, max(0.0, 1 - p * 1.3)
 
 
 # ---------------------------------------------------------------- gathering (no GTK)
@@ -708,6 +721,7 @@ def main():
 
     poll()
     win.set_size_request(geo.width, -1)
+    win.set_opacity(0.0)                   # invisible until it is in place below the edge; then it rises
     win.show_all()
     for key in ("cpu", "mem", "disk"):
         rows[key][2].show()
@@ -715,7 +729,38 @@ def main():
     height = min(max(HEIGHT, outer.get_preferred_height()[1]), geo.height // 2)
     canvas.set_size_request(-1, height)
     win.resize(geo.width, height)
-    win.move(geo.x, geo.y + geo.height - height)                  # the full width, flush with the bottom
+    base_y = geo.y + geo.height - height                          # the full width, flush with the bottom
+    trace = os.environ.get("CEC_INFO_TRACE")
+    run = {"t0": time.monotonic(), "entering": True, "closing": False}
+
+    def place(slide, alpha):
+        win.set_opacity(alpha)
+        win.move(geo.x, int(base_y + height * slide))
+        if trace:
+            print(f"anim {'in' if run['entering'] else 'out'} slide={slide:.2f} alpha={alpha:.2f} y={win.get_position()[1]}", flush=True)
+
+    def step():
+        dur = ENTER_S if run["entering"] else EXIT_S
+        t = (time.monotonic() - run["t0"]) / dur
+        place(*animation(t, run["entering"]))
+        if t < 1.0:
+            return True
+        if not run["entering"]:
+            Gtk.main_quit()
+        else:
+            GLib.timeout_add_seconds(int(os.environ.get("CEC_INFO_SECONDS", SHOW_SECONDS)), close)   # shown for a while, then away
+        return False
+
+    def close(*_):
+        """Leave the same way it came (also what SIGTERM does: the receiver closes the panel by terminating it)."""
+        if not run["closing"]:
+            run.update(closing=True, entering=False, t0=time.monotonic())
+            GLib.timeout_add(16, step)
+        return False
+
+    place(*animation(0.0, True))
+    GLib.timeout_add(16, step)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, close)
     GLib.timeout_add(1000, poll)
     GLib.timeout_add(16, frame)
 
@@ -728,7 +773,6 @@ def main():
             Gtk.main_quit()
             return False
         GLib.timeout_add(3500, take)
-    GLib.timeout_add_seconds(int(os.environ.get("CEC_INFO_SECONDS", SHOW_SECONDS)), Gtk.main_quit)
     try:
         Gtk.main()
     finally:

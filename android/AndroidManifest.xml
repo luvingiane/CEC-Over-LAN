@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.cecoverlan.tv">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- granted once with `pm grant` (install.sh): lets the app read the HDMI routing state -->
+    <uses-permission android:name="android.permission.DUMP"/>
+    <!-- dumpsys hdmi_control wants one of these; install.sh tries to grant them (often refused) -->
+    <uses-permission android:name="android.permission.QUERY_AUDIO_STATE"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING"/>
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <application android:label="CEC-Over-LAN" android:allowBackup="false">
+        <service android:name=".KeyService" android:exported="true" android:label="CEC-Over-LAN"
+                 android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_service_config"/>
+        </service>
+    </application>
+</manifest>

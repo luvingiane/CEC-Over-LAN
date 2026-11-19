@@ -101,14 +101,13 @@ def status(_q=None):
     on_screen = "unknown"
     _, journal = run(["journalctl", "--user", "-u", SERVICE, "-n", "40", "-o", "cat",
                       "--no-pager"], 5)
-    source = "adb"
     for line in journal.splitlines():
         if line.startswith("[source]"):
             on_screen = "yes" if line.endswith("yes") else "no"
-        elif line.startswith("[app] TV app connected"):
-            source = "app"
-        elif line.startswith("[app] TV app disconnected"):
-            source = "adb"
+    # the last connect/disconnect line, however many key presses came after it
+    _, app_log = run(["journalctl", "--user", "-u", SERVICE, "-g", "TV app (dis)?connected", "-n", "1",
+                      "-o", "cat", "--no-pager"], 5)
+    source = "app" if "TV app connected" in app_log else "adb"
     _, log = run(["journalctl", "--user", "-u", SERVICE, "-n", "200", "-o", "cat", "--no-pager"], 5)
     would = [ln for ln in log.splitlines()
              if (ln.startswith("[dry-run] ") or ln.startswith("[launch] ")) and "mode" not in ln]

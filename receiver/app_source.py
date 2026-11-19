@@ -7,6 +7,8 @@ The app connects to this machine over TCP and sends text lines, one per event:
     KEY_RED UP
     GATE yes|no          whether the TV is showing this machine (the app reads it on the TV)
     PING                 every few seconds; silence for SILENCE_S closes the connection
+    WIN <text>           which window came to the front on the TV; only written to the log (it tells
+                         whether the TV changed input, see the gate)
 
 Only private addresses are served, the token is compared in constant time, lines are short and the
 format is strict, so a stray client can neither press a key it should not nor fill the memory.
@@ -150,6 +152,9 @@ class AppSource:
                 self._gate = g.group(1) == "yes"
                 continue
             if line == "PING":
+                continue
+            if line.startswith("WIN "):
+                self.log("[window] " + line[4:150])
                 continue
             bad += 1
             if bad > MAX_BAD_LINES:

@@ -604,7 +604,9 @@ class RemoteModel(unittest.TestCase):
         self.assertEqual([b[k]["code"] for k in ("red", "green", "yellow", "blue")],
                          ["KEY_STOPCD", "KEY_EJECTCD", "KEY_SHUFFLE", "KEY_SEARCH"])
         self.assertEqual(b["exit"]["code"], "KEY_EXIT")
-        self.assertIsNone(b["netflix"]["code"])      # unknown until learned, never invented
+        self.assertIsNone(b["mic"]["code"])          # unknown until learned, never invented
+        self.assertEqual(b["mute"]["code"], "KEY_MUTE")
+        self.assertTrue(b["netflix"]["guess"])       # read off the order of a test, not confirmed
 
     def test_learning_a_button_and_going_back(self):
         self.assertTrue(self.web.do_remote({"id": "info", "code": "KEY_INFO"})["ok"])
@@ -616,11 +618,11 @@ class RemoteModel(unittest.TestCase):
         self.assertEqual(self.web.remote_model()["buttons"]["ok"]["code"], "KEY_SELECT")
 
     def test_a_code_belongs_to_one_button(self):
-        self.web.do_remote({"id": "info", "code": "KEY_INFO"})
-        self.web.do_remote({"id": "epg", "code": "KEY_INFO"})
+        self.web.do_remote({"id": "mic", "code": "KEY_PROG1"})
+        self.web.do_remote({"id": "settings", "code": "KEY_PROG1"})
         b = self.web.remote_model()["buttons"]
-        self.assertEqual(b["epg"]["code"], "KEY_INFO")
-        self.assertIsNone(b["info"]["code"])                        # the first one is unlearned again
+        self.assertEqual(b["settings"]["code"], "KEY_PROG1")
+        self.assertIsNone(b["mic"]["code"])                         # the first one is unlearned again
 
     def test_bad_input_is_rejected(self):
         for bad in ({"id": "nope", "code": "KEY_A"}, {"id": "info", "code": "rm -rf"},
@@ -1171,6 +1173,14 @@ class AppSourceTests(unittest.TestCase):
         s.sendall(b"KEY_ENTER UP\n")
         self.assertTrue(self.wait(lambda: self.keys))
         self.assertEqual(self.keys, [("KEY_ENTER", "UP")])
+
+    def test_window_lines_are_only_logged(self):
+        src, port = self.make()
+        s = self.client(port); s.recv(3)
+        s.sendall(b"WIN com.tv.input HdmiActivity [HDMI 1]\nKEY_UP DOWN\n")
+        self.assertTrue(self.wait(lambda: self.keys))
+        self.assertIn("[window] com.tv.input HdmiActivity [HDMI 1]", self.events)
+        self.assertEqual(self.keys, [("KEY_UP", "DOWN")])
 
     def test_the_newest_app_replaces_the_old_one(self):
         src, port = self.make()

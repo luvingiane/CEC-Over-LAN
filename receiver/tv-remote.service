@@ -14,7 +14,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=%h/cec-over-lan/tv-remote.env
-ExecStart=/usr/bin/python3 -B %h/cec-over-lan/tv_remote.py --target ${TV_TARGET}
+ExecStart=/usr/bin/python3 -B %h/cec-over-lan/tv_remote.py --source auto --target ${TV_TARGET}
 Restart=always
 RestartSec=2
 # adb reconnection with backoff is also handled inside the script.

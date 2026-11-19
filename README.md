@@ -1,15 +1,18 @@
-# CEC-Over-LAN
+<h1 align="center">CEC-Over-LAN</h1>
 
-Use the physical remote of a Google TV as an input device for a Linux VM (or PC) connected to the TV over HDMI, when you don't have a CEC capable device (literally every GPUs in the market don't have CEC chip inside): the key presses travel over the LAN (adb) and the receiver injects them only while the TV is showing the machine.
+<p align="center"><b>Drive a Linux machine with the remote of your Android TV, over the LAN.</b></p>
 
-How it works (variant A, no app on the TV):
+Use the physical remote of an Android / Google TV as an input device for a Linux VM (or PC) connected to the TV over HDMI, when you don't have a CEC-capable device (practically no GPU on the market has a CEC chip). The key presses travel over the LAN and the machine injects them only while the TV is showing it. On top of that the machine draws what a screen driven by a remote needs: an on-screen keyboard, an info panel (what plays, the window in front, how the machine is doing), Steam hints with your remote's own buttons, mouse actions, per-application rules, and a phone page to set it all up.
 
-1. The machine connects to the TV with `adb` (wireless debugging, one-time pairing).
-2. `receiver/tv_remote.py` reads `adb shell getevent -l`, translates the keys and re-injects them into a `uinput` device ("TV Remote (CEC-Over-LAN)").
-3. The machine sees a normal keyboard: ES-DE, Kodi and GNOME react to it.
-4. Every 1.5 s the receiver reads `mActiveRoutingPath` from `dumpsys hdmi_control` and injects only if the TV is showing the machine's HDMI port (`0x1000` = HDMI 1, configurable with `--active-path`). When you use the TV for anything else, no key reaches the machine.
+How it works:
 
-Tested on: Debian 13 with GNOME Shell 48.7, a `MiTV_MZTU0` Google TV, a 20 m fibre-optic HDMI cable. The full test report is in [REPORT.md](REPORT.md).
+1. **A source delivers the remote's keys to the machine.** Either the **TV app** (`android/`: an accessibility service that sends the keys over TCP; `adb` is needed once, to install it) or **adb** itself (`adb shell getevent -l` over wireless debugging, the fallback). With `--source auto` the app is used while it is connected.
+2. `receiver/tv_remote.py` translates the keys with the keymap (per key: a tap, a long press, exceptions per application; the actions are keys, applications, web pages, the on-screen keyboard, the info panel and the mouse) and injects them into a `uinput` device ("TV Remote (CEC-Over-LAN)").
+3. The machine sees a normal keyboard and mouse: ES-DE, Kodi, Steam and GNOME react to it.
+4. **Keys are injected only while the TV is showing the machine.** The app works that out from the window in front on the TV; adb reads `mActiveRoutingPath` from `dumpsys hdmi_control` (`0x1000` = HDMI 1, configurable with `--active-path`). When you use the TV for anything else, no key reaches the machine; while the machine is shown, the app keeps the keys from the TV (Power, Home and Volume still go to it).
+5. A page for your phone pairs the TV, shows a live key monitor and lets you bind every button on a drawing of your own remote, made from a photo with an AI prompt.
+
+Tested on: Debian 13 with GNOME Shell 48.7, a Xiaomi `MiTV-MZTU0` (Android 14), a 20 m fibre-optic HDMI cable. The full test report is in [REPORT.md](REPORT.md).
 
 ## On the machine
 
@@ -56,8 +59,8 @@ Volume is left to the TV. The physical Home key reaches `getevent` but is not ma
 
 ## Requirements
 
-- On the TV: Developer options and Wireless debugging enabled, by hand, by the owner.
-- On the machine: `adb` (`android-tools-adb`), Python 3 with `python-evdev`, write access to `/dev/uinput` (via an ACL here).
+- On the TV: Android / Google TV 11 or newer, with Developer options and Wireless debugging enabled by the owner (to pair, and to install the TV app once).
+- On the machine: GNOME Shell 48 to 51 on Wayland (see *Support and limitations*), `adb` (`android-tools-adb`), Python 3 with `python-evdev` and PyGObject (GTK 3), write access to `/dev/uinput` (via an ACL here). Optional: `avahi-utils` (finds the TV's port by itself), PipeWire with `pw-record` and `numpy` (the spectrum of the info panel).
 
 ## Usage
 
@@ -216,8 +219,6 @@ Security: it answers only to private (RFC 1918) addresses, every API call needs 
 ```bash
 python3 -m unittest discover -s tests -v    # keymap validation, routing, long press, reload (no TV needed)
 ```
-
-## Roadmap
 
 ## The TV app (`android/`)
 

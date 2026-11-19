@@ -437,7 +437,7 @@ def fetch_art(url):
 HEIGHT = 430          # logical pixels: the right column needs about this much
 PROGRESS_H = 8
 ART_SHARE = 0.40                 # the artwork covers this part of the panel's width, from the left edge
-TEXT_SHARE = 0.30                # the media text starts here (it does not follow the artwork)
+TEXT_MARGIN = 72                 # the media text starts at the left edge, over the artwork: long titles need the room
 
 
 def css_rgba(c, alpha=None):
@@ -598,8 +598,8 @@ def main():
     title = label("Nothing playing", "title")
     title.set_line_wrap(True)
     title.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
-    title.set_lines(2)
-    title.set_max_width_chars(40)
+    title.set_lines(3)
+    title.set_max_width_chars(70)
     artist, album = label("", "artist"), label("", "muted")
     elapsed, remaining = label("", "muted"), label("", "muted", 1.0)
     head = Gtk.Box(spacing=10)
@@ -643,7 +643,7 @@ def main():
         side.pack_start(row(key, icon_name), False, False, 0)
 
     outer = Gtk.Box(spacing=36)
-    outer.set_margin_start(int(geo.width * TEXT_SHARE) + 40)      # over the spectrum, over the faded end of the artwork
+    outer.set_margin_start(TEXT_MARGIN)
     outer.set_margin_end(56)
     outer.set_margin_top(40)
     outer.set_margin_bottom(24 + PROGRESS_H)

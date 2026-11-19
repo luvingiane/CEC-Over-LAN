@@ -260,6 +260,41 @@ class Spectrum(threading.Thread):
 
 
 ART_MAX_BYTES = 3_000_000
+ART_HEIGHT, ART_MIN_W, ART_MAX_W = 240, 200, 426      # square for music, up to 16:9 for video
+
+
+def letterbox(row_means, threshold=14):
+    """(top, bottom) rows of black bars to cut from a picture, given the mean brightness of every row
+    (YouTube's 4:3 thumbnails carry bars above and below a 16:9 picture). At most a third each way."""
+    n = len(row_means)
+    top = 0
+    while top < n // 3 and row_means[top] < threshold:
+        top += 1
+    bottom = 0
+    while bottom < n // 3 and row_means[n - 1 - bottom] < threshold:
+        bottom += 1
+    return top, bottom
+
+
+def crop_bars(pix):
+    """The picture without the black bars above and below it, or as it is. GdkPixbuf's pixel buffer
+    ends with a short last row, so it is padded before it is reshaped."""
+    try:
+        import numpy as np
+        w, h, rs, n = pix.get_width(), pix.get_height(), pix.get_rowstride(), pix.get_n_channels()
+        buf = bytes(pix.get_pixels())
+        rows = np.frombuffer(buf + b"\0" * (h * rs - len(buf)), dtype=np.uint8).reshape(h, rs)[:, :w * n].reshape(h, w, n)[:, :, :3]
+        top, bottom = letterbox(list(rows.mean(axis=(1, 2))))
+        if top + bottom and h - top - bottom >= h // 2:
+            return pix.new_subpixbuf(0, top, w, h - top - bottom)
+    except Exception:
+        pass
+    return pix
+
+
+def art_size(width, height):
+    """Size of the artwork box for a picture of that shape: ART_HEIGHT high, as wide as the shape asks."""
+    return int(min(ART_MAX_W, max(ART_MIN_W, ART_HEIGHT * width / max(1, height)))), ART_HEIGHT
 
 
 def fetch_art(url):
@@ -338,7 +373,8 @@ def main():
 
     # ---- left: artwork, text, progress, spectrum
     art_area = Gtk.DrawingArea()
-    art_area.set_size_request(240, 240)
+    art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
+    art_area.set_valign(Gtk.Align.CENTER)       # a Box would stretch it to the full height of the panel
 
     def draw_art(widget, cr):
         w, h = widget.get_allocated_width(), widget.get_allocated_height()
@@ -350,8 +386,10 @@ def main():
         cr.clip()
         pix = state["art"]
         if pix is not None:
-            scaled = pix.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
-            Gdk.cairo_set_source_pixbuf(cr, scaled, 0, 0)
+            s = max(w / pix.get_width(), h / pix.get_height())          # cover the box, keep the shape
+            sw, sh = int(pix.get_width() * s + 0.5), int(pix.get_height() * s + 0.5)
+            scaled = pix.scale_simple(sw, sh, GdkPixbuf.InterpType.BILINEAR)
+            Gdk.cairo_set_source_pixbuf(cr, scaled, (w - sw) / 2, (h - sh) / 2)
             cr.paint()
         else:
             cr.set_source_rgb(0.16, 0.18, 0.22)
@@ -426,7 +464,7 @@ def main():
         box.pack_end(bar, False, False, 0)
         return box
 
-    side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
     side.set_size_request(520, -1)
     side.pack_start(clock, False, False, 0)
     side.pack_start(date, False, False, 0)
@@ -439,8 +477,8 @@ def main():
     outer = Gtk.Box(spacing=36)
     for m in ("start", "end"):
         getattr(outer, "set_margin_" + m)(56)
-    outer.set_margin_top(28)
-    outer.set_margin_bottom(28)
+    outer.set_margin_top(24)
+    outer.set_margin_bottom(24)
     outer.pack_start(art_area, False, False, 0)
     outer.pack_start(mid, True, True, 0)
     outer.pack_start(side, False, False, 0)
@@ -458,8 +496,9 @@ def main():
                     loader = GdkPixbuf.PixbufLoader()
                     loader.write(data)
                     loader.close()
-                    pix = loader.get_pixbuf()
-                    GLib.idle_add(lambda: (state.update(art=pix), art_area.queue_draw(), False)[2])
+                    pix = crop_bars(loader.get_pixbuf())
+                    GLib.idle_add(lambda: (state.update(art=pix), art_area.set_size_request(*art_size(pix.get_width(), pix.get_height())),
+                                           art_area.queue_draw(), False)[3])
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
@@ -481,6 +520,7 @@ def main():
             progress.set_value(min(1.0, p["position"] / p["length"]) if p["length"] else 0)
             if p["art"] != state["art_url"]:
                 state.update(art_url=p["art"], art=None)
+                art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
                 art_area.queue_draw()
                 if p["art"]:
                     load_art(p["art"])
@@ -489,6 +529,7 @@ def main():
                 w.set_text(t)
             progress.set_value(0)
             state.update(art=None, art_url=None)
+            art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
         f = d["front"]
         rows["front"][1].set_text(f["title"] if f else "nothing in front")
         if f:
@@ -510,12 +551,13 @@ def main():
         return True
 
     poll()
-    win.set_size_request(geo.width, HEIGHT)
+    win.set_size_request(geo.width, -1)
     win.show_all()
     for key in ("cpu", "mem", "disk"):
         rows[key][2].show()
-    win.resize(geo.width, HEIGHT)
-    win.move(geo.x, geo.y + geo.height - HEIGHT)                  # the full width, flush with the bottom
+    height = min(max(HEIGHT, win.get_preferred_size()[1].height), geo.height // 2)   # what the content needs
+    win.resize(geo.width, height)
+    win.move(geo.x, geo.y + geo.height - height)                  # the full width, flush with the bottom
     GLib.timeout_add(1000, poll)
     GLib.timeout_add(40, lambda: (bars.queue_draw(), True)[1])
 

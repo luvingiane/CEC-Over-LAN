@@ -1322,6 +1322,31 @@ class InfoPanel(unittest.TestCase):
         fall = tv_info.levels_from_samples(np.zeros(1024, dtype="<i2"), edges, previous=lv)
         self.assertTrue(0 < fall[peak] < lv[peak])          # bars fall smoothly, not at once
 
+    def test_artwork_box_follows_the_shape_and_bars_are_found(self):
+        self.assertEqual(tv_info.art_size(600, 600), (240, 240))            # music: square
+        self.assertEqual(tv_info.art_size(1280, 720), (426, 240))           # video: 16:9
+        self.assertEqual(tv_info.art_size(2000, 100)[0], 426)               # never wider than that
+        self.assertEqual(tv_info.art_size(50, 400)[0], 200)                 # nor narrower
+        rows = [0.0] * 45 + [90.0] * 270 + [1.0] * 45                       # a 4:3 thumbnail with bars
+        self.assertEqual(tv_info.letterbox(rows), (45, 45))
+        self.assertEqual(tv_info.letterbox([80.0] * 100), (0, 0))
+        self.assertEqual(tv_info.letterbox([0.0] * 90), (30, 30))           # all black: at most a third each way
+
+    @unittest.skipUnless(__import__("importlib").util.find_spec("numpy") and __import__("importlib").util.find_spec("gi"),
+                         "numpy or gi not installed")
+    def test_black_bars_are_cut_from_a_real_pixbuf(self):
+        import gi
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf
+        pix = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 40, 40)
+        pix.fill(0xC8C8C8FF)                                     # grey picture ...
+        black = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 40, 6)
+        black.fill(0x000000FF)
+        black.copy_area(0, 0, 40, 6, pix, 0, 0)                  # ... with 6 black rows above and below
+        black.copy_area(0, 0, 40, 6, pix, 0, 34)
+        cut = tv_info.crop_bars(pix)
+        self.assertEqual((cut.get_width(), cut.get_height()), (40, 28))
+
     def test_artwork_only_from_files_and_web_and_small(self):
         tmp = Path(tempfile.mkdtemp()) / "a.png"
         tmp.write_bytes(b"x" * 10)

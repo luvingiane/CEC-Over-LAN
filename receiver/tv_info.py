@@ -224,6 +224,32 @@ def parse_color(text):
     return None
 
 
+def mix(a, b, t):
+    """a moved towards b by t (0..1), alpha kept from a."""
+    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3)) + (a[3],)
+
+
+def luminance(c):
+    def lin(v):
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+
+
+def contrast(a, b):
+    la, lb = sorted((luminance(a), luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def readable_on(fg, bg, ratio):
+    """fg pushed towards white (on a dark background) or black (on a light one) until it reads against bg."""
+    end = (1.0, 1.0, 1.0, 1.0) if luminance(bg) < 0.4 else (0.0, 0.0, 0.0, 1.0)
+    for step in range(11):
+        c = mix(fg, end, step / 10)
+        if contrast(c, bg) >= ratio:
+            return c
+    return end
+
+
 def define_colors(path, _seen=None):
     """{name: value text} of the @define-color lines of a GTK css file and of the files it @imports."""
     import re
@@ -260,10 +286,15 @@ def palette(css=None, accent_name="blue", scheme="prefer-dark"):
             if c:
                 return c
         return parse_color(default)
-    return {"bg": pick("window-bg-color", default="#1e1e1e" if dark else "#fafafa"),
-            "fg": pick("window-fg-color", default="#ffffff" if dark else "#241f31"),
+    bg = pick("window-bg-color", default="#1e1e1e" if dark else "#fafafa")
+    fg = pick("window-fg-color", default="#ffffff" if dark else "#241f31")
+    accent = pick("accent-bg-color", "accent-color", default=ADWAITA_ACCENT.get(accent_name, "#3584e4"))
+    return {"bg": bg, "fg": fg, "accent": accent,
             "card": pick("card-bg-color", default="#303030" if dark else "#ffffff"),
-            "accent": pick("accent-bg-color", "accent-color", default=ADWAITA_ACCENT.get(accent_name, "#3584e4"))}
+            # text that stays readable over the bars and the artwork, as bright as the theme allows
+            "text": readable_on(fg, bg, 12.0), "soft": readable_on(fg, bg, 8.0),
+            # the spectrum is the quiet layer: the accent, darker than the text and tinted by the background
+            "bars": mix(accent, bg, 0.5)}
 
 
 def gnome_settings():
@@ -346,7 +377,6 @@ class Spectrum(threading.Thread):
 
 
 ART_MAX_BYTES = 3_000_000
-ART_HEIGHT, ART_MIN_W, ART_MAX_W = 240, 200, 426      # square for music, up to 16:9 for video
 
 
 def letterbox(row_means, threshold=14):
@@ -378,11 +408,6 @@ def crop_bars(pix):
     return pix
 
 
-def art_size(width, height):
-    """Size of the artwork box for a picture of that shape: ART_HEIGHT high, as wide as the shape asks."""
-    return int(min(ART_MAX_W, max(ART_MIN_W, ART_HEIGHT * width / max(1, height)))), ART_HEIGHT
-
-
 def fetch_art(url):
     """Bytes of the artwork a player points to (file://, http, https), or None. Small and with a timeout."""
     if url.startswith("file://"):
@@ -405,16 +430,17 @@ def css_rgba(c, alpha=None):
 
 
 def build_css(pal):
-    fg, bg, ac = pal["fg"], pal["bg"], pal["accent"]
+    text, soft, bg, ac = pal["text"], pal["soft"], pal["bg"], pal["accent"]
+    shadow = f"text-shadow: 0 0 10px {css_rgba(bg, 0.95)}, 0 2px 4px {css_rgba(bg, 0.95)};"
     return f"""
-label, label:backdrop {{ color: {css_rgba(fg)}; font-size: 22px; text-shadow: 0 1px 6px {css_rgba(bg, 0.9)}; }}
-label.title, label.title:backdrop {{ font-size: 40px; font-weight: bold; }}
-label.artist, label.artist:backdrop {{ font-size: 28px; color: {css_rgba(fg, 0.85)}; }}
-label.muted, label.muted:backdrop {{ font-size: 20px; color: {css_rgba(fg, 0.6)}; }}
-label.clock, label.clock:backdrop {{ font-size: 52px; font-weight: bold; }}
-levelbar trough, levelbar trough:backdrop {{ background: {css_rgba(fg, 0.15)}; min-height: 10px; border-radius: 5px; }}
+label, label:backdrop {{ color: {css_rgba(soft)}; font-size: 22px; {shadow} }}
+label.title, label.title:backdrop {{ font-size: 42px; font-weight: bold; color: {css_rgba(text)}; }}
+label.artist, label.artist:backdrop {{ font-size: 28px; color: {css_rgba(text)}; }}
+label.muted, label.muted:backdrop {{ font-size: 20px; color: {css_rgba(soft)}; }}
+label.clock, label.clock:backdrop {{ font-size: 52px; font-weight: bold; color: {css_rgba(text)}; }}
+levelbar trough, levelbar trough:backdrop {{ background: {css_rgba(soft, 0.25)}; min-height: 10px; border-radius: 5px; }}
 levelbar block.filled, levelbar block.filled:backdrop {{ background: {css_rgba(ac)}; border-radius: 5px; }}
-image, image:backdrop {{ color: {css_rgba(fg, 0.65)}; }}
+image, image:backdrop {{ color: {css_rgba(soft)}; }}
 """.encode()
 
 
@@ -499,8 +525,8 @@ def main():
             scaled = pix.scale_simple(sw, sh, GdkPixbuf.InterpType.BILINEAR)
             Gdk.cairo_set_source_pixbuf(cr, scaled, (aw - sw) / 2, (h - sh) / 2)
             fade = cairo.LinearGradient(0, 0, aw, 0)
-            fade.add_color_stop_rgba(0.0, 0, 0, 0, 0.55)
-            fade.add_color_stop_rgba(0.5, 0, 0, 0, 0.30)
+            fade.add_color_stop_rgba(0.0, 0, 0, 0, 0.50)
+            fade.add_color_stop_rgba(0.45, 0, 0, 0, 0.28)
             fade.add_color_stop_rgba(1.0, 0, 0, 0, 0.0)
             cr.mask(fade)
             state["back"], state["back_key"] = surf, key
@@ -523,7 +549,7 @@ def main():
         if back is not None:
             cr.set_source_surface(back, 0, 0)
             cr.paint()
-        ac = pal["accent"]
+        ac, bars = pal["accent"], pal["bars"]
         n = len(shown)
         if n:
             gap = max(3.0, w / n * 0.18)
@@ -531,7 +557,7 @@ def main():
             for i, v in enumerate(shown):
                 bh = 4 + v * (h - PROGRESS_H - 30) * 0.6        # behind the text: low enough to leave it readable
                 rounded_rect(cr, i * (bw + gap), h - PROGRESS_H - 6 - bh, bw, bh, min(bw * 0.4, 7))
-                cr.set_source_rgba(ac[0], ac[1], ac[2], 0.14 + 0.28 * v)
+                cr.set_source_rgba(bars[0], bars[1], bars[2], 0.30 + 0.35 * v)
                 cr.fill()
         frac = fraction()
         if frac is not None:
@@ -544,35 +570,6 @@ def main():
             cr.fill()
         return False
     canvas.connect("draw", draw_canvas)
-
-    # ---- the crisp artwork, in the shape it has
-    art_area = Gtk.DrawingArea()
-    art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
-    art_area.set_valign(Gtk.Align.CENTER)       # a Box would stretch it to the full height of the panel
-
-    def draw_art(widget, cr):
-        w, h = widget.get_allocated_width(), widget.get_allocated_height()
-        rounded_rect(cr, 0, 0, w, h, 18)
-        cr.clip()
-        pix = state["art"]
-        if pix is not None:
-            s = max(w / pix.get_width(), h / pix.get_height())          # cover the box, keep the shape
-            sw, sh = int(pix.get_width() * s + 0.5), int(pix.get_height() * s + 0.5)
-            scaled = pix.scale_simple(sw, sh, GdkPixbuf.InterpType.BILINEAR)
-            Gdk.cairo_set_source_pixbuf(cr, scaled, (w - sw) / 2, (h - sh) / 2)
-            cr.paint()
-        else:
-            c = pal["card"]
-            cr.set_source_rgba(c[0], c[1], c[2], 1.0)
-            cr.paint()
-            try:
-                note = Gtk.IconTheme.get_default().load_icon("audio-x-generic-symbolic", 96, 0)
-                Gdk.cairo_set_source_pixbuf(cr, note, (w - note.get_width()) / 2, (h - note.get_height()) / 2)
-                cr.paint_with_alpha(0.35)
-            except GLib.Error:
-                pass
-        return False
-    art_area.connect("draw", draw_art)
 
     # ---- text
     player_icon = Gtk.Image()
@@ -624,11 +621,10 @@ def main():
         side.pack_start(row(key, icon_name), False, False, 0)
 
     outer = Gtk.Box(spacing=36)
-    outer.set_margin_start(56)
+    outer.set_margin_start(72)
     outer.set_margin_end(56)
     outer.set_margin_top(24)
     outer.set_margin_bottom(24 + PROGRESS_H)
-    outer.pack_start(art_area, False, False, 0)
     outer.pack_start(mid, True, True, 0)
     outer.pack_start(side, False, False, 0)
     overlay = Gtk.Overlay()
@@ -649,8 +645,7 @@ def main():
                     loader.write(data)
                     loader.close()
                     pix = crop_bars(loader.get_pixbuf())
-                    GLib.idle_add(lambda: (state.update(art=pix), art_area.set_size_request(*art_size(pix.get_width(), pix.get_height())),
-                                           art_area.queue_draw(), canvas.queue_draw(), False)[4])
+                    GLib.idle_add(lambda: (state.update(art=pix), canvas.queue_draw(), False)[2])
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
@@ -669,15 +664,13 @@ def main():
             timeinfo.set_text(f'{mmss(p["position"])} / {mmss(p["length"])}' if p["length"] else mmss(p["position"]))
             if p["art"] != state["art_url"]:
                 state.update(art_url=p["art"], art=None)
-                art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
-                art_area.queue_draw()
+                canvas.queue_draw()
                 if p["art"]:
                     load_art(p["art"])
         else:
             for w, t in ((title, "Nothing playing"), (artist, ""), (album, ""), (player_name, ""), (timeinfo, "")):
                 w.set_text(t)
             state.update(art=None, art_url=None)
-            art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
         f = d["front"]
         rows["front"][1].set_text(f["title"] if f else "nothing in front")
         if f:

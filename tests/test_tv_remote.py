@@ -1322,11 +1322,7 @@ class InfoPanel(unittest.TestCase):
         fall = tv_info.levels_from_samples(np.zeros(1024, dtype="<i2"), edges, previous=lv)
         self.assertTrue(0 < fall[peak] < lv[peak])          # bars fall smoothly, not at once
 
-    def test_artwork_box_follows_the_shape_and_bars_are_found(self):
-        self.assertEqual(tv_info.art_size(600, 600), (240, 240))            # music: square
-        self.assertEqual(tv_info.art_size(1280, 720), (426, 240))           # video: 16:9
-        self.assertEqual(tv_info.art_size(2000, 100)[0], 426)               # never wider than that
-        self.assertEqual(tv_info.art_size(50, 400)[0], 200)                 # nor narrower
+    def test_black_bars_are_found(self):
         rows = [0.0] * 45 + [90.0] * 270 + [1.0] * 45                       # a 4:3 thumbnail with bars
         self.assertEqual(tv_info.letterbox(rows), (45, 45))
         self.assertEqual(tv_info.letterbox([80.0] * 100), (0, 0))
@@ -1362,6 +1358,18 @@ class InfoPanel(unittest.TestCase):
         self.assertGreater(none["bg"][0], 0.9)                                              # light scheme
         self.assertIsNone(tv_info.parse_color("@accent"))
         self.assertEqual(tv_info.parse_color("#fff"), (1.0, 1.0, 1.0, 1.0))
+
+    def test_text_stays_readable_over_the_theme_colours(self):
+        tmp = Path(tempfile.mkdtemp()) / "gtk.css"
+        tmp.write_text("@define-color window-bg-color #1a1b26;\n@define-color window-fg-color #a9b1d6;\n@define-color accent-bg-color #cfc9ff;\n")
+        pal = tv_info.palette(tmp)
+        self.assertGreaterEqual(tv_info.contrast(pal["text"], pal["bg"]), 12.0)
+        self.assertGreaterEqual(tv_info.contrast(pal["soft"], pal["bg"]), 8.0)
+        self.assertLess(tv_info.luminance(pal["bars"]), tv_info.luminance(pal["text"]) / 2)   # the spectrum is the quiet layer
+        light = tmp.with_name("light.css")
+        light.write_text("@define-color window-bg-color #fafafa;\n@define-color window-fg-color #5e5c64;\n")
+        pl = tv_info.palette(light)
+        self.assertGreaterEqual(tv_info.contrast(pl["text"], pl["bg"]), 12.0)                  # dark text on a light theme
 
     def test_artwork_only_from_files_and_web_and_small(self):
         tmp = Path(tempfile.mkdtemp()) / "a.png"

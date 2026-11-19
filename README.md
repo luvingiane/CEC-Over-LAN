@@ -11,11 +11,21 @@ How it works (variant A, no app on the TV):
 
 Tested on: Debian 13 with GNOME Shell 48.7, a `MiTV_MZTU0` Google TV, a 20 m fibre-optic HDMI cable. The full test report is in [REPORT.md](REPORT.md).
 
+## On the machine
+
+<p align="center">
+<img src="docs/screenshots/pc-info.jpg" alt="The info panel over ES-DE while music plays" width="32%">
+<img src="docs/screenshots/pc-keyboard.jpg" alt="The on-screen keyboard driven by the remote" width="32%">
+<img src="docs/screenshots/pc-steam.jpg" alt="Steam Big Picture with the remote's buttons in its hints" width="32%">
+</p>
+
+What the machine shows, left to right: the info panel (`info:show`: what plays, the window in front, the machine's state), the on-screen keyboard (`osk:toggle`), and Steam Big Picture where the hints "Enter" and "Esc" become the remote's own OK and Back (the red and blue buttons show as such). Pictures taken on the machine itself, at 2560x1440.
+
 ## Support and limitations
 
 **One command to adapt it:** paste [`docs/ADAPT-PROMPT.md`](docs/ADAPT-PROMPT.md) into an AI agent that can run commands on your computer. It checks your system, installs the receiver and the GNOME extension, builds your remote from a photo (`receiver/web/remote-prompt.md`), fits the TV app to your TV (a *TV profile* in `android/profiles/`), and reports what does not work.
 
-**Supported systems.** The computer: Linux with **GNOME Shell 48 on Wayland** (tested on Debian 13, GNOME 48.7). Other desktops are not supported yet; KDE Plasma Bigscreen may follow. The GNOME-specific parts are: the `desktop/gnome/focuspid@claude` extension (focus restore, per-app rules, the window in front), the screen mode read from Mutter (D-Bus `org.gnome.Mutter.DisplayConfig`), the accent colour and colour scheme from GSettings, and the GTK 3 windows (keyboard, info panel) shown through Xwayland. A Plasma port would need replacements for those four. The TV: Android TV / Google TV, Android 11 or newer (the pairing of Wireless debugging), with the computer on **the TV's own HDMI input**. Tested on one TV only: Xiaomi MiTV-MZTU0, Android 14.
+**Supported systems.** The computer: Linux with **GNOME Shell 48 to 51 on Wayland**: tested on Debian 13 with GNOME 48.7 only; 49 to 51 are expected to work (the extension lists them and uses only long-standing Shell APIs) but have not been tried. Other desktops are not supported yet; KDE Plasma Bigscreen may follow. The GNOME-specific parts are: the `desktop/gnome/focuspid@claude` extension (focus restore, per-app rules, the window in front), the screen mode read from Mutter (D-Bus `org.gnome.Mutter.DisplayConfig`), the accent colour and colour scheme from GSettings, and the GTK 3 windows (keyboard, info panel) shown through Xwayland. A Plasma port would need replacements for those four. The TV: Android TV / Google TV, Android 11 or newer (the pairing of Wireless debugging), with the computer on **the TV's own HDMI input**. Tested on one TV only: Xiaomi MiTV-MZTU0, Android 14.
 
 **Limitations.**
 

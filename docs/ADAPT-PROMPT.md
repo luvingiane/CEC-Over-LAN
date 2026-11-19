@@ -24,11 +24,11 @@ the steps below **in order**. Rules:
 
 ## Step 0: is my computer supported?
 
-Supported today: **GNOME Shell 48 on Wayland** (tested on Debian 13, GNOME 48.7). Other desktops are not supported;
+Supported today: **GNOME Shell 48 to 51 on Wayland** (tested only on 48.7, Debian 13; 49 to 51 are expected to work and untried). Other desktops are not supported;
 KDE Plasma Bigscreen may come later (the pieces that are GNOME-specific are listed in the README). Check:
 
 ```bash
-gnome-shell --version                      # must say GNOME Shell 48.x (other versions: tell me, see step 2)
+gnome-shell --version                      # GNOME Shell 48 to 51 (48 is the one tested); anything else: tell me, see step 2
 loginctl show-session "$(loginctl | awk '/seat/ {print $1; exit}')" -p Type    # wayland expected
 systemctl --user is-active pipewire        # the info panel's spectrum needs PipeWire (it is optional)
 python3 -c "import evdev, gi; print('evdev and gi ok')"
@@ -65,8 +65,9 @@ gnome-extensions enable focuspid@claude   # on Wayland the shell must be restart
 gdbus call --session --dest org.claude.FocusPid --object-path /org/claude/FocusPid --method org.claude.FocusPid.Get
 ```
 
-Its `metadata.json` lists `"shell-version": ["48"]`. On another GNOME version, tell me first; if I agree, add the
-version, enable it and report whether the D-Bus call answers. Do not claim it works unless it did.
+Its `metadata.json` lists `"shell-version": ["48", "49", "50", "51"]`; only 48 has been tried, so report which
+version you are on and whether the D-Bus call answers. On a version outside that list, tell me first; if I agree, add
+it, enable the extension and report whether the call answers. Do not claim it works unless it did.
 
 ## Step 3: my remote
 

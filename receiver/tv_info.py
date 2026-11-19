@@ -436,6 +436,7 @@ def fetch_art(url):
 # ---------------------------------------------------------------- the window (GTK)
 HEIGHT = 430          # logical pixels: the right column needs about this much
 PROGRESS_H = 8
+ART_SHARE = 0.30                 # the artwork covers this part of the panel's width, from the left edge
 
 
 def css_rgba(c, alpha=None):
@@ -524,13 +525,13 @@ def main():
     canvas.set_vexpand(True)
 
     def backdrop(w, h):
-        """The artwork over the left 60 % of the panel, dimmed and fading to nothing at its end (cached)."""
+        """The artwork over the left 30 % of the panel, dimmed and fading to nothing at its end (cached)."""
         pix = state["art"]
         if pix is None:
             return None
         key = (id(pix), w, h)
         if state["back_key"] != key:
-            aw = int(w * 0.6)
+            aw = int(w * ART_SHARE)
             surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, aw, h)
             cr = cairo.Context(surf)
             s = max(aw / pix.get_width(), h / pix.get_height())
@@ -592,15 +593,16 @@ def main():
     title.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
     title.set_lines(2)
     title.set_max_width_chars(40)
-    artist, album, timeinfo = label("", "artist"), label("", "muted"), label("", "muted")
+    artist, album = label("", "artist"), label("", "muted")
+    elapsed, remaining = label("", "muted"), label("", "muted", 1.0)
     head = Gtk.Box(spacing=10)
     head.pack_start(player_icon, False, False, 0)
     head.pack_start(player_name, True, True, 0)
     mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-    for w in (head, title, artist, album, timeinfo):
+    for w in (head, title, artist, album):
         mid.pack_start(w, False, False, 0)
     mid.set_hexpand(True)
-    mid.set_valign(Gtk.Align.CENTER)
+    mid.set_valign(Gtk.Align.START)               # towards the top
 
     # ---- right: the machine
     clock, date = label("", "clock", 1.0), label("", "muted", 1.0)
@@ -634,20 +636,33 @@ def main():
         side.pack_start(row(key, icon_name), False, False, 0)
 
     outer = Gtk.Box(spacing=36)
-    outer.set_margin_start(72)
+    outer.set_margin_start(int(geo.width * ART_SHARE) + 40)       # right after the artwork, over the spectrum
     outer.set_margin_end(56)
-    outer.set_margin_top(24)
+    outer.set_margin_top(40)
     outer.set_margin_bottom(24 + PROGRESS_H)
     outer.pack_start(mid, True, True, 0)
     outer.pack_start(side, False, False, 0)
+    times = Gtk.Box()                                  # the ends of the panel, just above the progress bar
+    times.set_valign(Gtk.Align.END)
+    times.set_margin_start(22)
+    times.set_margin_end(22)
+    times.set_margin_bottom(PROGRESS_H + 6)
+    times.pack_start(elapsed, False, False, 0)
+    times.pack_end(remaining, False, False, 0)
     overlay = Gtk.Overlay()
     overlay.add(canvas)
     overlay.add_overlay(outer)
+    overlay.add_overlay(times)
     win.add(overlay)
 
     def mmss(us):
         s = max(0, int(us / 1e6))
         return f"{s // 60}:{s % 60:02d}"
+
+    def set_times(p, pos):
+        """Played so far on the left, what is left (not the whole length) on the right."""
+        elapsed.set_text(mmss(pos))
+        remaining.set_text("-" + mmss(p["length"] - pos) if p["length"] else "")
 
     def load_art(url):
         def work():
@@ -674,14 +689,14 @@ def main():
             album.set_text(p["album"])
             player_name.set_text(f'{p["name"]}  ·  {p["status"].lower()}')
             player_icon.set_from_gicon(icon_for([p["entry"]] if p["entry"] else [], "multimedia-player-symbolic"), Gtk.IconSize.LARGE_TOOLBAR)
-            timeinfo.set_text(f'{mmss(p["position"])} / {mmss(p["length"])}' if p["length"] else mmss(p["position"]))
+            set_times(p, p["position"])
             if p["art"] != state["art_url"]:
                 state.update(art_url=p["art"], art=None)
                 canvas.queue_draw()
                 if p["art"]:
                     load_art(p["art"])
         else:
-            for w, t in ((title, "Nothing playing"), (artist, ""), (album, ""), (player_name, ""), (timeinfo, "")):
+            for w, t in ((title, "Nothing playing"), (artist, ""), (album, ""), (player_name, ""), (elapsed, ""), (remaining, "")):
                 w.set_text(t)
             state.update(art=None, art_url=None)
         f = d["front"]
@@ -715,7 +730,7 @@ def main():
         p = d and d["player"]
         if p and p["length"] and p["status"] == "Playing":
             pos = p["position"] + (time.monotonic() - state["t0"]) * 1e6
-            timeinfo.set_text(f'{mmss(pos)} / {mmss(p["length"])}')
+            set_times(p, min(pos, p["length"]))
         canvas.queue_draw()
         return True
 

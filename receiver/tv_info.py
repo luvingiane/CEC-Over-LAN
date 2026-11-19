@@ -240,11 +240,31 @@ def in_front():
     return {"title": (f["title"] or f["class"] or f["comm"] or "").strip(), "ids": ids}
 
 
+# windows that are the desktop or the frontend, not "an app in front": music keeps the panel open over them
+FRONTEND_NAMES = ("es-de", "esde", "gnome-shell", "org.gnome.shell", "mutter")
+
+
+def is_app(front):
+    """True when `front` ({'title', 'ids'} of the focused window, or None) is a real application."""
+    if not front:
+        return False
+    text = " ".join([front.get("title", "")] + list(front.get("ids", []))).lower()
+    return not any(name in text for name in FRONTEND_NAMES)
+
+
+def is_sticky(player, front):
+    """The panel stays open (until the action is used again) while music plays and no application is in front:
+    nothing is in the way of it, and it is what one wants to look at. Anything else: it closes by itself."""
+    return bool(player and player.get("status") == "Playing" and not is_app(front))
+
+
 def snapshot(screen=None):
     """Everything the panel shows, as plain data (the window only draws it)."""
     pls = players()
+    front = in_front()
     return {"time": datetime.now().strftime("%H:%M"), "date": datetime.now().strftime("%a %d %b"),
-            "player": pls[0] if pls else None, "front": in_front(), "screen": screen or screen_mode(),
+            "player": pls[0] if pls else None, "front": front, "sticky": is_sticky(pls[0] if pls else None, front),
+            "screen": screen or screen_mode(),
             "uptime": uptime(), "cpu": cpu_percent(), "mem": memory_fraction(), "mem_text": memory(),
             "disk": disk_fraction(), "disk_text": disk(), "batteries": devices()}
 
@@ -833,7 +853,24 @@ def main():
         if not run["entering"]:
             Gtk.main_quit()
         else:
-            GLib.timeout_add_seconds(int(os.environ.get("CEC_INFO_SECONDS", SHOW_SECONDS)), close)   # shown for a while, then away
+            GLib.timeout_add_seconds(int(os.environ.get("CEC_INFO_SECONDS", SHOW_SECONDS)), deadline)   # shown for a while, then away
+        return False
+
+    def deadline():
+        """The time is up: it closes, unless music plays with no application in front; then it stays and
+        looks again every second, and closes when that stops being true."""
+        d = state["data"]
+        if d and d["sticky"]:
+            GLib.timeout_add_seconds(1, recheck)
+        else:
+            close()
+        return False
+
+    def recheck():
+        d = state["data"]
+        if d and d["sticky"] and not run["closing"]:
+            return True
+        close()
         return False
 
     def close(*_):

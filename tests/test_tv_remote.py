@@ -1362,6 +1362,16 @@ class InfoPanel(unittest.TestCase):
         self.assertIsNone(tv_info.parse_color("@accent"))
         self.assertEqual(tv_info.parse_color("#fff"), (1.0, 1.0, 1.0, 1.0))
 
+    def test_the_panel_stays_while_music_plays_and_no_app_is_in_front(self):
+        playing, paused = {"status": "Playing"}, {"status": "Paused"}
+        self.assertTrue(tv_info.is_sticky(playing, None))                                   # nothing focused
+        self.assertTrue(tv_info.is_sticky(playing, {"title": "ES-DE", "ids": ["ES-DE"]}))   # the frontend is not an app
+        self.assertTrue(tv_info.is_sticky(playing, {"title": "", "ids": ["org.gnome.Shell"]}))
+        self.assertFalse(tv_info.is_sticky(playing, {"title": "YouTube TV", "ids": ["YouTube TV"]}))   # an app: it closes
+        self.assertFalse(tv_info.is_sticky(playing, {"title": "Kodi", "ids": ["kodi"]}))
+        self.assertFalse(tv_info.is_sticky(paused, None))                                   # no music, no reason to stay
+        self.assertFalse(tv_info.is_sticky(None, None))
+
     def test_the_panel_rises_and_leaves_smoothly(self):
         self.assertEqual(tv_info.animation(0.0, True), (1.0, 0.0))        # below the edge, invisible
         self.assertEqual(tv_info.animation(1.0, True), (0.0, 1.0))        # in place

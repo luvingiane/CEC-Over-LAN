@@ -1347,6 +1347,22 @@ class InfoPanel(unittest.TestCase):
         cut = tv_info.crop_bars(pix)
         self.assertEqual((cut.get_width(), cut.get_height()), (40, 28))
 
+    def test_colours_come_from_the_gtk_theme_then_from_gnome(self):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "theme.css").write_text('@define-color window-bg-color #1a1b26;\n@define-color accent_bg_color #cfc9ff;\n'
+                                       '@define-color card-bg-color mix(#000, white, 0.2);\n')
+        (tmp / "gtk.css").write_text('@import url("theme.css");\n@define-color window-fg-color rgba(10, 20, 30, 0.5);\n')
+        pal = tv_info.palette(tmp / "gtk.css", accent_name="purple")
+        self.assertEqual([round(x * 255) for x in pal["bg"][:3]], [0x1a, 0x1b, 0x26])
+        self.assertEqual([round(x * 255) for x in pal["accent"][:3]], [0xcf, 0xc9, 0xff])   # underscores in names are fine
+        self.assertEqual(pal["fg"][3], 0.5)
+        self.assertEqual([round(x * 255) for x in pal["card"][:3]], [0x30, 0x30, 0x30])      # mix() is not read: the default is used
+        none = tv_info.palette(tmp / "missing.css", accent_name="teal", scheme="prefer-light")
+        self.assertEqual([round(x * 255) for x in none["accent"][:3]], [0x21, 0x90, 0xa4])  # GNOME's accent colour
+        self.assertGreater(none["bg"][0], 0.9)                                              # light scheme
+        self.assertIsNone(tv_info.parse_color("@accent"))
+        self.assertEqual(tv_info.parse_color("#fff"), (1.0, 1.0, 1.0, 1.0))
+
     def test_artwork_only_from_files_and_web_and_small(self):
         tmp = Path(tempfile.mkdtemp()) / "a.png"
         tmp.write_bytes(b"x" * 10)

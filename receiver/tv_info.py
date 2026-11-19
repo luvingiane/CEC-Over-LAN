@@ -201,8 +201,91 @@ def disk_fraction(path="/"):
         return None
 
 
+# ---------------------------------------------------------------- GNOME colours (no GTK)
+ADWAITA_ACCENT = {"blue": "#3584e4", "teal": "#2190a4", "green": "#3a944a", "yellow": "#c88800", "orange": "#ed5b00",
+                  "red": "#e62d42", "pink": "#d56199", "purple": "#9141ac", "slate": "#6f8396"}
+
+
+def parse_color(text):
+    """(r, g, b, a) in 0..1 from '#rrggbb', '#rgb', 'rgb(...)' or 'rgba(...)'; None for anything else (mix(), @names...)."""
+    import re
+    text = (text or "").strip()
+    m = re.fullmatch(r"#([0-9a-fA-F]{6})", text)
+    if m:
+        v = m.group(1)
+        return tuple(int(v[i:i + 2], 16) / 255 for i in (0, 2, 4)) + (1.0,)
+    m = re.fullmatch(r"#([0-9a-fA-F]{3})", text)
+    if m:
+        return tuple(int(c * 2, 16) / 255 for c in m.group(1)) + (1.0,)
+    m = re.fullmatch(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)", text)
+    if m:
+        r, g, b = (min(255.0, float(m.group(i))) / 255 for i in (1, 2, 3))
+        return (r, g, b, float(m.group(4)) if m.group(4) else 1.0)
+    return None
+
+
+def define_colors(path, _seen=None):
+    """{name: value text} of the @define-color lines of a GTK css file and of the files it @imports."""
+    import re
+    path, _seen = Path(path), _seen if _seen is not None else set()
+    out = {}
+    if path in _seen or not path.is_file():
+        return out
+    _seen.add(path)
+    try:
+        text = path.read_text()
+    except OSError:
+        return out
+    for line in text.splitlines():
+        line = line.strip()
+        m = re.match(r"@import\s+url\(\"?([^\")]+)\"?\)\s*;", line)
+        if m:
+            out.update(define_colors(path.parent / m.group(1), _seen))
+            continue
+        m = re.match(r"@define-color\s+([\w-]+)\s+(.+?)\s*;", line)
+        if m:
+            out[m.group(1).replace("_", "-")] = m.group(2)
+    return out
+
+
+def palette(css=None, accent_name="blue", scheme="prefer-dark"):
+    """The panel's colours, from the user's GTK theme (named colours such as window-bg-color, which a theme
+    manager like Rewaita writes) and, where it names none, from GNOME's accent colour and dark/light setting."""
+    names = define_colors(css if css is not None else Path.home() / ".config/gtk-3.0/gtk.css")
+    dark = scheme != "prefer-light"
+
+    def pick(*keys, default):
+        for k in keys:
+            c = parse_color(names.get(k))
+            if c:
+                return c
+        return parse_color(default)
+    return {"bg": pick("window-bg-color", default="#1e1e1e" if dark else "#fafafa"),
+            "fg": pick("window-fg-color", default="#ffffff" if dark else "#241f31"),
+            "card": pick("card-bg-color", default="#303030" if dark else "#ffffff"),
+            "accent": pick("accent-bg-color", "accent-color", default=ADWAITA_ACCENT.get(accent_name, "#3584e4"))}
+
+
+def gnome_settings():
+    """(accent colour name, colour scheme) from GSettings, with the defaults when it cannot be read."""
+    try:
+        import gi
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio
+        s = Gio.Settings.new("org.gnome.desktop.interface")
+
+        def get(key, default):
+            try:
+                return s.get_string(key)
+            except Exception:                  # older GNOME: no accent-color key
+                return default
+        return get("accent-color", "blue"), get("color-scheme", "prefer-dark")
+    except Exception:
+        return "blue", "prefer-dark"
+
+
 # ---------------------------------------------------------------- spectrum and artwork (no GTK)
-BANDS = 48
+BANDS = 64
 
 
 def band_edges(rate=44100, n=1024, bands=BANDS, lo=40.0, hi=16000.0):
@@ -213,8 +296,8 @@ def band_edges(rate=44100, n=1024, bands=BANDS, lo=40.0, hi=16000.0):
     return bins
 
 
-def levels_from_samples(samples, edges, previous=None):
-    """0..1 level per band from int16 samples; `previous` makes the bars fall smoothly."""
+def levels_from_samples(samples, edges, previous=None, fall=0.9):
+    """0..1 level per band from int16 samples; `previous` makes the bars fall smoothly (`fall` per call)."""
     import numpy as np
     x = samples.astype(np.float32) / 32768.0
     mag = np.abs(np.fft.rfft(x * np.hanning(len(x)))) / len(x)
@@ -224,13 +307,13 @@ def levels_from_samples(samples, edges, previous=None):
         db = 20 * np.log10(m + 1e-9)
         out.append(min(1.0, max(0.0, (db + 78.0) / 60.0)))
     if previous:
-        out = [max(v, p * 0.82) for v, p in zip(out, previous)]
+        out = [max(v, p * fall) for v, p in zip(out, previous)]
     return out
 
 
 class Spectrum(threading.Thread):
     """What the machine is playing, as band levels: pw-record on the monitor of the output, numpy FFT."""
-    N = 1024
+    N, HOP = 2048, 512             # a 46 ms window moved every 11 ms: about 86 updates a second
 
     def __init__(self):
         super().__init__(daemon=True)
@@ -242,14 +325,17 @@ class Spectrum(threading.Thread):
         try:
             import numpy as np
             edges = band_edges(n=self.N)
+            self.levels = [0.0] * (len(edges) - 1)
             self.proc = subprocess.Popen(
                 ["pw-record", "-a", "-P", "stream.capture.sink=true", "--rate", "44100", "--channels", "1",
-                 "--format", "s16", "--latency", "20ms", "-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                 "--format", "s16", "--latency", "10ms", "-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            window = np.zeros(self.N, dtype="<i2")
             while not self.stopped:
-                raw = self.proc.stdout.read(self.N * 2)
-                if len(raw) < self.N * 2:
+                raw = self.proc.stdout.read(self.HOP * 2)
+                if len(raw) < self.HOP * 2:
                     break
-                self.levels = levels_from_samples(np.frombuffer(raw, dtype="<i2"), edges, self.levels)
+                window = np.concatenate([window[self.HOP:], np.frombuffer(raw, dtype="<i2")])
+                self.levels = levels_from_samples(window, edges, self.levels)
         except Exception:
             pass                       # no numpy or no pw-record: the bars stay flat
 
@@ -310,19 +396,37 @@ def fetch_art(url):
 
 
 # ---------------------------------------------------------------- the window (GTK)
-HEIGHT = 340
-CSS = b"""
-window, window:backdrop { background: rgba(14,16,20,0.96); }
-label, label:backdrop { color: #f2f4f8; font-size: 22px; }
-label.title, label.title:backdrop { font-size: 40px; font-weight: bold; }
-label.artist, label.artist:backdrop { font-size: 28px; color: #c9d3e6; }
-label.muted, label.muted:backdrop { font-size: 20px; color: #8fa3c4; }
-label.clock, label.clock:backdrop { font-size: 52px; font-weight: bold; }
-levelbar trough, levelbar trough:backdrop { background: #2a2f38; min-height: 10px; border-radius: 5px; }
-levelbar block.filled, levelbar block.filled:backdrop { background: #3d7bff; border-radius: 5px; }
-levelbar block.high, levelbar block.high:backdrop { background: #e8a33d; border-radius: 5px; }
-image, image:backdrop { color: #8fa3c4; }
-"""
+HEIGHT = 430          # logical pixels: the right column needs about this much
+PROGRESS_H = 8
+
+
+def css_rgba(c, alpha=None):
+    return "rgba(%d,%d,%d,%.3f)" % (round(c[0] * 255), round(c[1] * 255), round(c[2] * 255), c[3] if alpha is None else alpha)
+
+
+def build_css(pal):
+    fg, bg, ac = pal["fg"], pal["bg"], pal["accent"]
+    return f"""
+label, label:backdrop {{ color: {css_rgba(fg)}; font-size: 22px; text-shadow: 0 1px 6px {css_rgba(bg, 0.9)}; }}
+label.title, label.title:backdrop {{ font-size: 40px; font-weight: bold; }}
+label.artist, label.artist:backdrop {{ font-size: 28px; color: {css_rgba(fg, 0.85)}; }}
+label.muted, label.muted:backdrop {{ font-size: 20px; color: {css_rgba(fg, 0.6)}; }}
+label.clock, label.clock:backdrop {{ font-size: 52px; font-weight: bold; }}
+levelbar trough, levelbar trough:backdrop {{ background: {css_rgba(fg, 0.15)}; min-height: 10px; border-radius: 5px; }}
+levelbar block.filled, levelbar block.filled:backdrop {{ background: {css_rgba(ac)}; border-radius: 5px; }}
+image, image:backdrop {{ color: {css_rgba(fg, 0.65)}; }}
+""".encode()
+
+
+def rounded_rect(cr, x, y, w, h, r):
+    import math
+    r = max(0.0, min(r, w / 2, h / 2))
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    cr.close_path()
 
 
 def main():
@@ -330,9 +434,12 @@ def main():
     gi.require_version("Gtk", "3.0")
     gi.require_version("Gdk", "3.0")
     gi.require_version("GdkPixbuf", "2.0")
-    from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk
-    import cairo   # noqa: F401  (pycairo: the drawing areas)
+    gi.require_version("Pango", "1.0")
+    from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
+    import cairo
 
+    accent_name, scheme = gnome_settings()
+    pal = palette(accent_name=accent_name, scheme=scheme)
     win = Gtk.Window(title="CEC-Over-LAN info")
     win.set_decorated(False)
     win.set_accept_focus(False)
@@ -340,8 +447,9 @@ def main():
     win.set_keep_above(True)
     win.set_skip_taskbar_hint(True)
     win.set_type_hint(Gdk.WindowTypeHint.DOCK)
+    win.set_app_paintable(True)
     provider = Gtk.CssProvider()
-    provider.load_from_data(CSS)
+    provider.load_from_data(build_css(pal))
     Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 100)
     display = Gdk.Display.get_default()
     monitor = display.get_primary_monitor() or display.get_monitor(0)
@@ -350,14 +458,14 @@ def main():
 
     spectrum = Spectrum()
     spectrum.start()
-    state = {"data": None, "art": None, "art_url": None}
+    state = {"data": None, "art": None, "art_url": None, "t0": time.monotonic(), "back": None, "back_key": None}
+    shown = []                                   # the bars as drawn: they follow the spectrum with some inertia
 
-    def label(text="", css=None, xalign=0.0, ellipsize=True):
+    def label(text="", css=None, xalign=0.0):
         w = Gtk.Label(label=text, xalign=xalign)
         if css:
             w.get_style_context().add_class(css)
-        if ellipsize:
-            w.set_ellipsize(3)           # Pango.EllipsizeMode.END
+        w.set_ellipsize(Pango.EllipsizeMode.END)
         return w
 
     def icon_for(ids, fallback):
@@ -371,18 +479,80 @@ def main():
                     return info.get_icon()
         return Gio.ThemedIcon.new(fallback)
 
-    # ---- left: artwork, text, progress, spectrum
+    # ---- the canvas behind everything: the artwork faded out to the right, the spectrum, the progress bar
+    canvas = Gtk.DrawingArea()
+    canvas.set_hexpand(True)
+    canvas.set_vexpand(True)
+
+    def backdrop(w, h):
+        """The artwork over the left 60 % of the panel, dimmed and fading to nothing at its end (cached)."""
+        pix = state["art"]
+        if pix is None:
+            return None
+        key = (id(pix), w, h)
+        if state["back_key"] != key:
+            aw = int(w * 0.6)
+            surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, aw, h)
+            cr = cairo.Context(surf)
+            s = max(aw / pix.get_width(), h / pix.get_height())
+            sw, sh = int(pix.get_width() * s + 0.5), int(pix.get_height() * s + 0.5)
+            scaled = pix.scale_simple(sw, sh, GdkPixbuf.InterpType.BILINEAR)
+            Gdk.cairo_set_source_pixbuf(cr, scaled, (aw - sw) / 2, (h - sh) / 2)
+            fade = cairo.LinearGradient(0, 0, aw, 0)
+            fade.add_color_stop_rgba(0.0, 0, 0, 0, 0.55)
+            fade.add_color_stop_rgba(0.5, 0, 0, 0, 0.30)
+            fade.add_color_stop_rgba(1.0, 0, 0, 0, 0.0)
+            cr.mask(fade)
+            state["back"], state["back_key"] = surf, key
+        return state["back"]
+
+    def fraction():
+        d = state["data"]
+        p = d and d["player"]
+        if not p or not p["length"]:
+            return None
+        pos = p["position"] + ((time.monotonic() - state["t0"]) * 1e6 if p["status"] == "Playing" else 0)
+        return max(0.0, min(1.0, pos / p["length"]))
+
+    def draw_canvas(widget, cr):
+        w, h = widget.get_allocated_width(), widget.get_allocated_height()
+        bg = pal["bg"]
+        cr.set_source_rgba(bg[0], bg[1], bg[2], 0.97)
+        cr.paint()
+        back = backdrop(w, h)
+        if back is not None:
+            cr.set_source_surface(back, 0, 0)
+            cr.paint()
+        ac = pal["accent"]
+        n = len(shown)
+        if n:
+            gap = max(3.0, w / n * 0.18)
+            bw = (w - gap * (n - 1)) / n
+            for i, v in enumerate(shown):
+                bh = 4 + v * (h - PROGRESS_H - 30) * 0.6        # behind the text: low enough to leave it readable
+                rounded_rect(cr, i * (bw + gap), h - PROGRESS_H - 6 - bh, bw, bh, min(bw * 0.4, 7))
+                cr.set_source_rgba(ac[0], ac[1], ac[2], 0.14 + 0.28 * v)
+                cr.fill()
+        frac = fraction()
+        if frac is not None:
+            fg = pal["fg"]
+            cr.set_source_rgba(fg[0], fg[1], fg[2], 0.18)
+            cr.rectangle(0, h - PROGRESS_H, w, PROGRESS_H)
+            cr.fill()
+            cr.set_source_rgba(ac[0], ac[1], ac[2], 1.0)
+            cr.rectangle(0, h - PROGRESS_H, w * frac, PROGRESS_H)
+            cr.fill()
+        return False
+    canvas.connect("draw", draw_canvas)
+
+    # ---- the crisp artwork, in the shape it has
     art_area = Gtk.DrawingArea()
     art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
     art_area.set_valign(Gtk.Align.CENTER)       # a Box would stretch it to the full height of the panel
 
     def draw_art(widget, cr):
         w, h = widget.get_allocated_width(), widget.get_allocated_height()
-        r = 18
-        cr.new_sub_path()
-        for cx, cy, a in ((w - r, r, -90), (w - r, h - r, 0), (r, h - r, 90), (r, r, 180)):
-            cr.arc(cx, cy, r, a * 3.14159 / 180, (a + 90) * 3.14159 / 180)
-        cr.close_path()
+        rounded_rect(cr, 0, 0, w, h, 18)
         cr.clip()
         pix = state["art"]
         if pix is not None:
@@ -392,7 +562,8 @@ def main():
             Gdk.cairo_set_source_pixbuf(cr, scaled, (w - sw) / 2, (h - sh) / 2)
             cr.paint()
         else:
-            cr.set_source_rgb(0.16, 0.18, 0.22)
+            c = pal["card"]
+            cr.set_source_rgba(c[0], c[1], c[2], 1.0)
             cr.paint()
             try:
                 note = Gtk.IconTheme.get_default().load_icon("audio-x-generic-symbolic", 96, 0)
@@ -403,45 +574,23 @@ def main():
         return False
     art_area.connect("draw", draw_art)
 
+    # ---- text
     player_icon = Gtk.Image()
     player_name = label("", "muted")
-    title, artist, album = label("Nothing playing", "title"), label("", "artist"), label("", "muted")
-    elapsed, total = label("", "muted"), label("", "muted", 1.0)
-    progress = Gtk.LevelBar()
-    progress.set_min_value(0)
-    progress.set_max_value(1)
-    progress.set_no_show_all(True)
-
-    bars = Gtk.DrawingArea()
-    bars.set_size_request(-1, 90)
-    bars.set_hexpand(True)
-
-    def draw_bars(widget, cr):
-        w, h = widget.get_allocated_width(), widget.get_allocated_height()
-        lv = spectrum.levels
-        gap = 6
-        bw = (w - gap * (len(lv) - 1)) / len(lv)
-        for i, v in enumerate(lv):
-            bh = max(4.0, v * h)
-            x = i * (bw + gap)
-            cr.set_source_rgba(0.24, 0.48, 1.0, 0.55 + 0.45 * v)
-            cr.rectangle(x, h - bh, bw, bh)
-            cr.fill()
-        return False
-    bars.connect("draw", draw_bars)
-
+    title = label("Nothing playing", "title")
+    title.set_line_wrap(True)
+    title.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+    title.set_lines(2)
+    title.set_max_width_chars(40)
+    artist, album, timeinfo = label("", "artist"), label("", "muted"), label("", "muted")
     head = Gtk.Box(spacing=10)
     head.pack_start(player_icon, False, False, 0)
     head.pack_start(player_name, True, True, 0)
-    times = Gtk.Box()
-    times.pack_start(elapsed, False, False, 0)
-    times.pack_end(total, False, False, 0)
-    times.set_no_show_all(True)
     mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-    for w in (head, title, artist, album, times, progress, bars):
+    for w in (head, title, artist, album, timeinfo):
         mid.pack_start(w, False, False, 0)
     mid.set_hexpand(True)
-    mid.set_vexpand(False)
+    mid.set_valign(Gtk.Align.CENTER)
 
     # ---- right: the machine
     clock, date = label("", "clock", 1.0), label("", "muted", 1.0)
@@ -475,14 +624,17 @@ def main():
         side.pack_start(row(key, icon_name), False, False, 0)
 
     outer = Gtk.Box(spacing=36)
-    for m in ("start", "end"):
-        getattr(outer, "set_margin_" + m)(56)
+    outer.set_margin_start(56)
+    outer.set_margin_end(56)
     outer.set_margin_top(24)
-    outer.set_margin_bottom(24)
+    outer.set_margin_bottom(24 + PROGRESS_H)
     outer.pack_start(art_area, False, False, 0)
     outer.pack_start(mid, True, True, 0)
     outer.pack_start(side, False, False, 0)
-    win.add(outer)
+    overlay = Gtk.Overlay()
+    overlay.add(canvas)
+    overlay.add_overlay(outer)
+    win.add(overlay)
 
     def mmss(us):
         s = max(0, int(us / 1e6))
@@ -498,7 +650,7 @@ def main():
                     loader.close()
                     pix = crop_bars(loader.get_pixbuf())
                     GLib.idle_add(lambda: (state.update(art=pix), art_area.set_size_request(*art_size(pix.get_width(), pix.get_height())),
-                                           art_area.queue_draw(), False)[3])
+                                           art_area.queue_draw(), canvas.queue_draw(), False)[4])
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
@@ -507,17 +659,14 @@ def main():
         clock.set_text(d["time"])
         date.set_text(d["date"])
         p = d["player"]
-        progress.set_visible(bool(p and p["length"]))
-        times.set_visible(bool(p and p["length"]))
+        state["t0"] = time.monotonic()
         if p:
             title.set_text(p["title"])
             artist.set_text(p["artist"])
             album.set_text(p["album"])
             player_name.set_text(f'{p["name"]}  ·  {p["status"].lower()}')
             player_icon.set_from_gicon(icon_for([p["entry"]] if p["entry"] else [], "multimedia-player-symbolic"), Gtk.IconSize.LARGE_TOOLBAR)
-            elapsed.set_text(mmss(p["position"]))
-            total.set_text(mmss(p["length"]) if p["length"] else "")
-            progress.set_value(min(1.0, p["position"] / p["length"]) if p["length"] else 0)
+            timeinfo.set_text(f'{mmss(p["position"])} / {mmss(p["length"])}' if p["length"] else mmss(p["position"]))
             if p["art"] != state["art_url"]:
                 state.update(art_url=p["art"], art=None)
                 art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
@@ -525,9 +674,8 @@ def main():
                 if p["art"]:
                     load_art(p["art"])
         else:
-            for w, t in ((title, "Nothing playing"), (artist, ""), (album, ""), (player_name, ""), (elapsed, ""), (total, "")):
+            for w, t in ((title, "Nothing playing"), (artist, ""), (album, ""), (player_name, ""), (timeinfo, "")):
                 w.set_text(t)
-            progress.set_value(0)
             state.update(art=None, art_url=None)
             art_area.set_size_request(ART_HEIGHT, ART_HEIGHT)
         f = d["front"]
@@ -550,16 +698,33 @@ def main():
         threading.Thread(target=work, daemon=True).start()
         return True
 
+    def frame():
+        """60 times a second: the bars move towards the spectrum (up fast, down slowly), the bar of the song advances."""
+        target = spectrum.levels
+        if len(shown) != len(target):
+            shown[:] = [0.0] * len(target)
+        for i, v in enumerate(target):
+            shown[i] += (v - shown[i]) * (0.55 if v > shown[i] else 0.14)
+        d = state["data"]
+        p = d and d["player"]
+        if p and p["length"] and p["status"] == "Playing":
+            pos = p["position"] + (time.monotonic() - state["t0"]) * 1e6
+            timeinfo.set_text(f'{mmss(pos)} / {mmss(p["length"])}')
+        canvas.queue_draw()
+        return True
+
     poll()
     win.set_size_request(geo.width, -1)
     win.show_all()
     for key in ("cpu", "mem", "disk"):
         rows[key][2].show()
-    height = min(max(HEIGHT, win.get_preferred_size()[1].height), geo.height // 2)   # what the content needs
+    # a GtkOverlay sizes itself from its main child only: the content decides the height here
+    height = min(max(HEIGHT, outer.get_preferred_height()[1]), geo.height // 2)
+    canvas.set_size_request(-1, height)
     win.resize(geo.width, height)
     win.move(geo.x, geo.y + geo.height - height)                  # the full width, flush with the bottom
     GLib.timeout_add(1000, poll)
-    GLib.timeout_add(40, lambda: (bars.queue_draw(), True)[1])
+    GLib.timeout_add(16, frame)
 
     snap = os.environ.get("CEC_INFO_SNAPSHOT")                      # diagnostics: save a picture of the window
     if snap:

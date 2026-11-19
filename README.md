@@ -220,6 +220,23 @@ Security: it answers only to private (RFC 1918) addresses, every API call needs 
 python3 -m unittest discover -s tests -v    # keymap validation, routing, long press, reload (no TV needed)
 ```
 
+## TV app or adb only?
+
+Both are supported and `--source auto` (the default of the unit) uses the app while it is connected and adb otherwise. The owner tested a standby and a reboot of the TV on the Xiaomi: the app comes back by itself both times; the adb link does not (Wireless debugging is switched off).
+
+| | **With the TV app** | **adb only** |
+|---|---|---|
+| Standby, reboot | Survives both, reconnects by itself (verified). | Wireless debugging goes off: nothing works until it is switched on again on the TV (the receiver then finds the new port by itself, but not before). |
+| Set-up | A build with the Android SDK (about 400 MB), an install over adb once, and a TV profile for each maker. | Nothing on the TV; pair once and go. |
+| Where it works | Tested on one TV (Xiaomi, Android 14); the "machine on screen" guess is specific to the maker's Live TV app. | Any Android / Google TV 11 or newer with CEC; reads the real HDMI routing path. |
+| "Is the machine on screen?" | A guess from the window in front: it cannot tell HDMI 1 from another input, and misses an overlay without a focused element. | Reads `mActiveRoutingPath`, exact, and tells HDMI ports apart. |
+| The TV's own reaction | Keeps the keys from the TV while the machine is shown (no overlays on top of it); Power, Home and Volume still go to the TV. | The TV reacts too: its menus open on top of the machine; only the receiver ignores the keys when the machine is not shown. |
+| Keys | The same keys plus those Android makes itself (`KEY_ANDROID_<n>`); duplicates from the remote's two input devices are dropped. | Raw kernel events, which are all the remote sends. |
+| Robustness | A plain TCP link; if the accessibility service is disabled (a TV update, a reset) it needs adb again. | A watchdog restarts the link when the TV stops answering (T4 and T6 in `REPORT.md`); polls the TV every 1.5 s. |
+| Trust | A shared token in plain TCP, written into the APK, and an accessibility service that sees window names and key presses. | The adb pairing key of the machine: it can run commands on the TV, so it is as powerful as it was. |
+
+In short: the app for everyday use, because it survives the TV being switched off; adb alone to try it out, or on a TV that has no profile yet. The measured difference in delay between the two has not been taken.
+
 ## The TV app (`android/`)
 
 A small Android app with an AccessibilityService, built here without Gradle. It replaces `adb shell getevent` as the source of the remote's keys, so Wireless debugging is needed only once, to install it; after that it starts with the TV and reconnects by itself.
@@ -258,7 +275,6 @@ The address and the token are written into the APK, so keep it to yourself. The 
 Ideas that came up and are not done, with what is known. None of this is promised.
 
 **To check on the setup that exists**
-- The TV app after a standby and a reboot of the TV: that the service starts and reconnects by itself has not been tested.
 - The remote's codes read off a test and not confirmed (Netflix, YouTube, EPG, Source, ★ are marked as guesses; Mic and Settings have none yet): confirm them with *Learn*.
 - `docs/ADAPT-PROMPT.md` and `receiver/web/remote-prompt.md` have not been run on another TV, another remote or another computer.
 - GNOME Shell 49 to 51 and X11 sessions (the extension lists 49 to 51; only 48.7 was tried).

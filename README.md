@@ -193,7 +193,27 @@ python3 -m unittest discover -s tests -v    # keymap validation, routing, long p
 
 ## Roadmap
 
-**Coming next: an Android APK for the TV** that uses an AccessibilityService to capture the remote's keys and send them to the machine. This removes the dependency on wireless debugging, which is switched off by a standby or a reboot (see T4 and T6 in REPORT.md), and with it the need to re-pair by hand. Until then, the web UI above is the stopgap.
+## The TV app (`android/`)
+
+A small Android app with an AccessibilityService, built here without Gradle. It replaces `adb shell getevent` as the source of the remote's keys, so Wireless debugging is needed only once, to install it; after that it starts with the TV and reconnects by itself.
+
+- **Keys:** every key press reaches the service with its raw scan code, which `android/gen_keynames.py` turns into the Linux names the keymap already uses (`KEY_STOPCD`, `KEY_SELECT`...); keys Android makes itself arrive as `KEY_ANDROID_<n>`. The remote shows up as two input devices, so the same press is reported twice; the app and the receiver each act on the first one only. Lines go over TCP (port 8766, private addresses, the token of the web UI) to `receiver/app_source.py`.
+- **Is the machine on screen?** `dumpsys hdmi_control` is closed to apps (it wants audio permissions that cannot be granted), so the app reads what is in front: the TV's Live TV app hosts the HDMI inputs, so "machine shown" means Live TV in front, no tuner window, and nothing with input focus (a focused row means a menu or an overlay such as the TV's own info panel is open). It cannot tell HDMI 1 from another HDMI input. Windows and focus are read by name only; the service description says so.
+- **The TV stays out of it:** while the machine is shown the app consumes the keys, so the TV shows none of its own overlays; **Power, Home, Volume and Mute always go to the TV**, which keeps a way out. With `CEC_CONSUME=false` nothing is consumed.
+- **Receiver:** `--source auto` (the default of the unit) takes the keys and the gate from the app while it is connected and falls back to adb when it is not; `--source app` never starts adb. When the machine leaves the screen, the receiver closes the info panel and the keyboard.
+- **Other apps' accessibility services stay:** the installer appends the service to the enabled ones (the Xiaomi launcher in use here, Projectivy, has its own).
+
+Build and install (the SDK goes in `android/sdk/`, which git ignores):
+
+```bash
+cd android
+curl -LO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip   # then unzip into sdk/cmdline-tools/latest
+yes | sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root="$PWD/sdk" "build-tools;34.0.0" "platforms;android-34"
+CEC_HOST=<this machine's address> CEC_TOKEN=$(cat ~/cec-over-lan/token) CEC_CONSUME=true ./build.sh
+./install.sh <TV ip:port> build/cec-over-lan-tv.apk        # where adb is paired; push + pm install, the streamed install dropped on the Xiaomi TV
+```
+
+The address and the token are written into the APK, so keep it to yourself. The keystore is created once in `~/.config/cec-over-lan/`. Tested on one TV only (Xiaomi MiTV-MZTU0, Android 14, API 34); the gate guess depends on how that TV's Live TV app behaves.
 
 ## Known limits
 
